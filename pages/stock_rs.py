@@ -6,11 +6,9 @@ if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
 
 main, side = st.columns([4.7, 1.35], gap="large")
-
 with side:
     st.markdown('<div class="right-panel"><div class="right-title">Scanner status</div>', unsafe_allow_html=True)
-    status_slot = st.empty()
-    stats_slot = st.empty()
+    status_slot = st.empty(); stats_slot = st.empty()
     st.markdown('</div>', unsafe_allow_html=True)
 
 with main:
@@ -49,14 +47,10 @@ with main:
         st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">The scanner will evaluate the NSE universe using your selected RS, 52-week and trend filters.</div></div>', unsafe_allow_html=True)
     else:
         stats = st.session_state.get("stock_stats", {})
-        matches = len(df)
-        near = int((df["From 52W High %"] <= 2).sum()) if matches else 0
-        strong = int((df["RS Rating"] >= 80).sum()) if matches else 0
+        matches = len(df); near = int((df["From 52W High %"] <= 2).sum()) if matches else 0; strong = int((df["RS Rating"] >= 80).sum()) if matches else 0
         stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.0f}%</div></div><div class='rstat'><div class='rstat-label'>RS 80+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within 2% of high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Batch size</div><div class='rstat-value'>{int(st.session_state.get('stock_batch_size',50))}</div></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
-        search_col, export_col = st.columns([4.2, 1])
-        with search_col: search = st.text_input("Search stocks", placeholder="Search symbol or sector…", label_visibility="collapsed", key="stock_search")
-        with export_col: st.download_button("↓  Export CSV", df.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, type="primary")
+        search = st.text_input("Search stocks", placeholder="Search symbol or sector…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
         if search:
             q = search.strip(); view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Sector"].str.contains(q, case=False, na=False)]
@@ -66,10 +60,8 @@ with main:
             styles = [""] * len(row)
             if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
                 score = float(row["RS Rating"])
-                if score >= 80: bg, fg = "#123b27", "#35d07f"
-                elif score >= 50: bg, fg = "#3a3015", "#f3b94b"
-                else: bg, fg = "#3b1a20", "#ff6673"
-                styles[row.index.get_loc("RS Rating")] = f"background-color:{bg};color:{fg};font-weight:700;"
+                fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
+                styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
         styled = shown.style.apply(stock_style, axis=1)
         st.dataframe(styled, use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
@@ -79,5 +71,5 @@ with main:
             "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
         })
         st.markdown(f'<div class="table-foot">Showing {len(shown):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
-        st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
+        st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>',unsafe_allow_html=True)
         st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filter = price above 50 / 150 / 200 DMA with configurable rising-period checks. Sector is a best-effort Yahoo Finance classification.</div>', unsafe_allow_html=True)
