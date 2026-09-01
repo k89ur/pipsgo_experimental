@@ -40,7 +40,7 @@ with main:
             progress.progress(1.0, text="Scan complete")
             stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Status</div><div class='rstat-value score-strong'>Complete</div></div><div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{len(result):,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.0f}%</div></div><div class='rstat'><div class='rstat-label'>Batch size</div><div class='rstat-value'>{int(batch_size)}</div></div>", unsafe_allow_html=True)
         except Exception as e:
-            progress.empty(); stats_slot.error("Scan failed"); st.error(f"Stock scan failed: {e}")
+            progress.empty(); status_slot.error("Scan failed"); st.error(f"Stock scan failed: {e}")
 
     df = st.session_state.stock_result
     if df is None:
@@ -64,14 +64,16 @@ with main:
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
 
-        # Minimal icon actions, aligned to the table's far-right edge.
-        action_spacer, eye_action, csv_action = st.columns([10, 0.55, 0.55])
-        with eye_action:
-            with st.popover(":material/visibility:", help="Select columns"):
-                st.caption("Columns")
-                selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
-        with csv_action:
-            st.download_button(" ", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
+        # True icon-only actions. They sit immediately above the table at its far right.
+        action_row = st.container()
+        with action_row:
+            action_spacer, eye_action, csv_action = st.columns([10, 0.5, 0.5])
+            with eye_action:
+                with st.popover("", icon=":material/visibility:", help="Select columns"):
+                    st.caption("Columns")
+                    selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
+            with csv_action:
+                st.download_button("", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
         if selected:
             shown = shown[selected]
         st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
