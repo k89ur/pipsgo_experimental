@@ -1,113 +1,73 @@
 import streamlit as st
 import pandas as pd
-from rs_engine import run_scan
+from index_rs_engine import run_index_scan
 
-st.set_page_config(page_title="NSE RS Scanner", page_icon="↗", layout="wide")
+st.set_page_config(page_title="NIFTY RS", page_icon="↗", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-.block-container {max-width: 1200px; padding-top: 2rem;}
-h1 {letter-spacing:-1px;}
-[data-testid="stMetricValue"] {font-size: 1.35rem;}
-.small {color:#777; font-size:.85rem;}
+.block-container{max-width:1150px;padding:1.6rem 1rem 3rem}
+h1{letter-spacing:-1px;margin-bottom:.2rem}
+[data-testid="stMetricValue"]{font-size:1.35rem}
+.small{color:#777;font-size:.82rem}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("NSE Relative Strength")
-st.caption("IBD-style relative strength ranking • NSE equities • simple momentum scan")
+st.title("NIFTY Relative Strength")
+st.caption("28 NIFTY indices · IBD-style RS · NIFTY 50 benchmark")
 
-with st.sidebar:
-    st.header("Scan")
-    min_rs = st.slider("Minimum RS Rating", 50, 99, 80)
-    near_high = st.slider("Within 52W high (%)", 1, 25, 5)
-    min_price = st.number_input("Minimum price (₹)", min_value=1.0, value=100.0, step=10.0)
-    rising_days = st.slider("MA rising days", 5, 40, 20)
-    batch_size = st.slider("Download batch size", 20, 100, 50)
-    st.divider()
-    use_minervini = st.checkbox("Use MA trend filters", value=True)
-    st.caption("Price must be above 50/150/200 DMA and all three must be rising.")
-    st.divider()
-    run = st.button("Run scan", type="primary", use_container_width=True)
+if "index_result" not in st.session_state:
+    st.session_state.index_result = None
 
-if "result" not in st.session_state:
-    st.session_state.result = None
+run = st.button("↻  Refresh RS", type="primary")
 
-if run:
-    progress = st.progress(0, text="Starting…")
-    status = st.empty()
-
-    def update(done, total, message):
-        pct = int(done / total * 100) if total else 0
-        progress.progress(min(pct, 100), text=f"{message}  {done}/{total}")
-
+if run or st.session_state.index_result is None:
+    progress = st.progress(0, text="Loading market data…")
     try:
-        result, stats = run_scan(
-            min_rs=min_rs,
-            near_high_pct=near_high,
-            min_price=min_price,
-            rising_days=rising_days,
-            use_minervini=use_minervini,
-            batch_size=batch_size,
-            progress_callback=update,
-        )
-        st.session_state.result = result
-        st.session_state.stats = stats
-        progress.progress(100, text="Scan complete")
-        status.success(f"Found {len(result)} stocks.")
+        def update(done, total, message):
+            progress.progress(min(done / max(total, 1), 1.0), text=f"{message} · {done}/{total}")
+        df, stats = run_index_scan(update)
+        st.session_state.index_result = df
+        st.session_state.index_stats = stats
+        progress.empty()
     except Exception as e:
         progress.empty()
-        st.error(f"Scan failed: {e}")
+        st.error(f"Data refresh failed: {e}")
+        st.stop()
 
-df = st.session_state.result
+df = st.session_state.index_result
+stats = st.session_state.get("index_stats", {})
 
 if df is not None:
-    stats = st.session_state.get("stats", {})
     c1, c2, c3 = st.columns(3)
-    c1.metric("Matches", len(df))
-    c2.metric("Universe", stats.get("universe", "—"))
-    c3.metric("Data coverage", f"{stats.get('coverage', 0):.0f}%")
+    c1.metric("Indices", stats.get("universe", 28))
+    c2.metric("Calculated", stats.get("available", 0))
+    asof = stats.get("as_of")
+    c3.metric("Latest data", asof.strftime("%d %b %Y") if hasattr(asof, "strftime") else "—")
 
-    st.subheader("Results")
+    st.divider()
+    search = st.text_input("Search index", placeholder="BANKNIFTY, AUTO, METAL…", label_visibility="collapsed")
+    view = df[df["INDEX"].str.contains(search, case=False, na=False)].copy() if search else df.copy()
 
-    display_cols = [
-        "Symbol", "LTP", "RS Rating", "3M %", "6M %",
-        "9M %", "12M %", "52W High", "From 52W High %"
-    ]
-    available = [c for c in display_cols if c in df.columns]
+    display_cols = ["Rank", "INDEX", "LTP", "RS 1-99", "Raw RS", "3M %", "6M %", "9M %", "12M %", "Status"]
     st.dataframe(
-        df[available],
+        view[display_cols],
         use_container_width=True,
         hide_index=True,
+        height=min(760, 80 + len(view) * 35),
         column_config={
-            "LTP": st.column_config.NumberColumn(format="₹%.2f"),
-            "52W High": st.column_config.NumberColumn(format="₹%.2f"),
-            "RS Rating": st.column_config.NumberColumn(format="%d"),
-            "3M %": st.column_config.NumberColumn(format="%.1f%%"),
-            "6M %": st.column_config.NumberColumn(format="%.1f%%"),
-            "9M %": st.column_config.NumberColumn(format="%.1f%%"),
-            "12M %": st.column_config.NumberColumn(format="%.1f%%"),
-            "From 52W High %": st.column_config.NumberColumn(format="%.1f%%"),
+            "Rank": st.column_config.NumberColumn("#", width="small"),
+            "LTP": st.column_config.NumberColumn("LTP", format="%.2f"),
+            "RS 1-99": st.column_config.NumberColumn("RS", format="%d"),
+            "Raw RS": st.column_config.NumberColumn("Raw RS", format="%.2f"),
+            "3M %": st.column_config.NumberColumn("3M Rel %", format="%.2f"),
+            "6M %": st.column_config.NumberColumn("6M Rel %", format="%.2f"),
+            "9M %": st.column_config.NumberColumn("9M Rel %", format="%.2f"),
+            "12M %": st.column_config.NumberColumn("12M Rel %", format="%.2f"),
         },
     )
 
-    out = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Download CSV",
-        data=out,
-        file_name="nse_rs_results.csv",
-        mime="text/csv",
-    )
-
-    st.caption("RS Rating is an IBD-style approximation, not IBD's proprietary rating. Data source: Yahoo Finance; NSE universe list: NSE.")
+    st.download_button("Export CSV", df.to_csv(index=False).encode("utf-8"), "nifty_index_rs.csv", "text/csv")
+    st.caption("The calculation follows the supplied Pine weighting and 1–99 ranking logic. Data availability is reported rather than silently substituted.")
 else:
-    st.info("Set your filters in the sidebar and press **Run scan**.")
-    st.markdown("""
-    **Default scan**
-
-    - RS Rating ≥ 80
-    - Within 5% of 52-week high
-    - Price ≥ ₹100
-    - At least 365 calendar days of data
-    - Price above 50 / 150 / 200 DMA
-    - 50 / 150 / 200 DMA rising
-    """)
+    st.info("Press Refresh RS to calculate the ranking.")
