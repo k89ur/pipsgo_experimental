@@ -5,8 +5,7 @@ from rs_engine import run_scan
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
 
-# Page-local brand. st.navigation renders page content separately from app.py.
-st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-size:.9rem;font-weight:800;letter-spacing:.28em;line-height:1;color:#f3f5f7;margin:.05rem 0 .7rem"><span style="color:#35d07f">PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable 52-week and Minervini filters</div></div>', unsafe_allow_html=True)
 
 main, side = st.columns([4.7, 1.35], gap="large")
@@ -63,20 +62,18 @@ with main:
         def stock_style(row):
             styles = [""] * len(row)
             if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
-                score = float(row["RS Rating"])
-                fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
+                score = float(row["RS Rating"]); fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
-        # Compact controls at the table's top-right; dataframe itself retains its native fullscreen control.
-        left, tools, _ = st.columns([4.4, 1.65, 0.45])
-        with tools:
-            t1, t2 = st.columns(2)
-            with t1:
-                with st.popover("👁", use_container_width=True):
-                    st.caption("Columns")
-                    selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
-            with t2:
-                st.download_button("↓", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv")
+
+        # Small, clean controls aligned to the table's upper-right.
+        tool_spacer, tool1, tool2 = st.columns([7.9, 0.7, 1.4])
+        with tool1:
+            with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
+                st.caption("Columns")
+                selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
+        with tool2:
+            st.download_button("⇩ Export CSV", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv", help="Download CSV")
         if selected:
             shown = shown[selected]
         st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
