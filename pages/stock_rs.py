@@ -63,16 +63,15 @@ with main:
                 score = float(row["RS Rating"]); fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
-        # Compact controls at the table's top-right.
-        left, tools, _ = st.columns([4.4, 1.65, 0.45])
-        with tools:
-            t1, t2 = st.columns([0.8, 1.8])
-            with t1:
-                with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
-                    st.caption("Columns")
-                    selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
-            with t2:
-                st.download_button("Export CSV", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv", help="Download CSV")
+
+        # Tiny table actions: aligned directly above the table at the far right.
+        action_spacer, eye_action, csv_action = st.columns([10, 0.42, 0.82])
+        with eye_action:
+            with st.popover(":material/visibility:", help="Select columns"):
+                st.caption("Columns")
+                selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
+        with csv_action:
+            st.download_button("CSV", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
         if selected:
             shown = shown[selected]
         st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
