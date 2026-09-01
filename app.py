@@ -4,11 +4,13 @@ st.set_page_config(page_title="PipsGo RS Scanner", page_icon="↗", layout="wide
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 :root{--bg:#090c11;--panel:#10151c;--panel2:#151b23;--line:#252d38;--text:#f3f5f7;--muted:#8993a2;--green:#35d07f;--amber:#f3b94b;--red:#ff6673;}
-.stApp{background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;}.block-container{max-width:1500px;padding:1rem 1.25rem 3rem;}
-[data-testid="stSidebar"]{background:#0d1117;border-right:1px solid var(--line);}[data-testid="stSidebar"]>div:first-child{padding-top:1rem;}
-.sidebar-label{font-size:.65rem;color:#697384;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin:.3rem 0 .55rem;}.logo{text-align:center;font-size:1.08rem;font-weight:800;letter-spacing:.22em;color:var(--text);margin:.15rem 0 1.15rem}.logo span{color:var(--green)}
+.stApp{background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.block-container{max-width:1500px;padding:1rem 1.25rem 3rem}
+[data-testid="stSidebar"]{background:#0d1117;border-right:1px solid var(--line)}[data-testid="stSidebar"]>div:first-child{padding-top:1rem}
+.sidebar-label{font-size:.65rem;color:#697384;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin:.3rem 0 .55rem}.logo{text-align:center;font-size:1.08rem;font-weight:800;letter-spacing:.22em;color:var(--text);margin:.15rem 0 1.15rem}.logo span{color:var(--green)}
+/* Dedicated brand mark: centered at the top without changing the scanner layout. */
+.top-brand{display:flex;justify-content:center;align-items:center;height:28px;margin:-.15rem 0 .35rem;pointer-events:none}.top-brand-mark{font-size:.82rem;font-weight:800;letter-spacing:.24em;color:var(--text);line-height:1}.top-brand-mark span{color:var(--green)}
 .page-head{margin-bottom:.85rem}.page-title{font-size:1.8rem;font-weight:700;letter-spacing:-.04em;line-height:1.05}.page-sub{color:var(--muted);font-size:.76rem;margin-top:.35rem}.section-title{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-weight:700;margin:1rem 0 .55rem}
 .right-panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:.85rem .9rem}.right-title{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-weight:700;margin-bottom:.7rem}.rstat{border-bottom:1px solid var(--line);padding:.55rem 0}.rstat:last-child{border-bottom:0}.rstat-label{color:#737e8f;font-size:.61rem;text-transform:uppercase;letter-spacing:.08em}.rstat-value{font-size:1.05rem;font-weight:700;margin-top:.15rem}
 .settings{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:.9rem 1rem}.leader-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.65rem}.leader{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.7rem .85rem}.leader-top{display:flex;justify-content:space-between;align-items:center}.leader-rank{color:var(--muted);font-size:.66rem}.leader-score{font-size:1.3rem;font-weight:700}.leader-name{font-size:.8rem;font-weight:600;margin-top:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.score-strong{color:var(--green)}.score-mid{color:var(--amber)}.score-weak{color:var(--red)}
@@ -16,11 +18,11 @@ st.markdown("""
 [data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:10px;overflow:hidden}[data-testid="stDataFrame"] [role="columnheader"]{background:var(--panel2)}
 [data-testid="stDownloadButton"] button{border-radius:8px;border:1px solid #2e9e68;background:#35d07f;color:#07110c;font-weight:700;min-height:2.2rem;padding:.25rem .8rem;box-shadow:0 5px 16px rgba(53,208,127,.08)}[data-testid="stDownloadButton"] button:hover{background:#4be28f;border-color:#4be28f;color:#07110c}
 .legend{color:var(--muted);font-size:.68rem;margin:.45rem 0 1rem}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 .25rem 0 .65rem}.dot:first-child{margin-left:0}.table-foot{color:#697384;font-size:.68rem;margin-top:.4rem}.footer{color:#5f6978;font-size:.68rem;border-top:1px solid var(--line);padding-top:.75rem;margin-top:1rem}
-@media(max-width:900px){.block-container{padding:1rem .7rem 2rem}.leader-grid{grid-template-columns:1fr}.page-title{font-size:1.55rem}}
+@media(max-width:900px){.block-container{padding:1rem .7rem 2rem}.leader-grid{grid-template-columns:1fr}.page-title{font-size:1.55rem}.top-brand{height:26px}.top-brand-mark{font-size:.76rem}}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="logo"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
+st.markdown('<div class="top-brand"><div class="top-brand-mark"><span>PIPS</span>GOX</div></div>', unsafe_allow_html=True)
 
 index_page = st.Page("pages/index_rs.py", title="Index RS", icon=":material/leaderboard:", url_path="index-rs", default=True)
 stock_page = st.Page("pages/stock_rs.py", title="Stock RS + Technical", icon=":material/query_stats:", url_path="stock-rs")
