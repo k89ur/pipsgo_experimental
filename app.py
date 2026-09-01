@@ -23,7 +23,7 @@ refresh = st.button("↻  Refresh RS", type="primary")
 
 # Automatically calculate on first page load. Refresh explicitly recalculates.
 if refresh or st.session_state.index_result is None:
-    progress = st.progress(0, text="Connecting to NSE…")
+    progress = st.progress(0, text="Connecting to TradingView…")
     try:
         def update(done, total, message):
             progress.progress(min(done / max(total, 1), 1.0), text=f"{message} · {done}/{total}")
@@ -33,7 +33,7 @@ if refresh or st.session_state.index_result is None:
         progress.empty()
     except Exception as e:
         progress.empty()
-        st.error(f"NSE data refresh failed: {e}")
+        st.error(f"TradingView data refresh failed: {e}")
         st.stop()
 
 df = st.session_state.index_result
@@ -45,7 +45,7 @@ if df is not None:
     c2.metric("Calculated", stats.get("available", 0))
     asof = stats.get("as_of")
     c3.metric("Latest data", asof.strftime("%d %b %Y") if hasattr(asof, "strftime") else "—")
-    c4.metric("Source", "NSE")
+    c4.metric("Source", "TradingView")
 
     st.divider()
     search = st.text_input("Search index", placeholder="BANKNIFTY, AUTO, METAL…", label_visibility="collapsed")
@@ -72,4 +72,4 @@ if df is not None:
     st.download_button("Export CSV", df.to_csv(index=False).encode("utf-8"), "nifty_index_rs.csv", "text/csv")
     st.caption("Formula: relative performance vs NIFTY 50, weighted 40% / 20% / 20% / 20%, then converted to 1–99 using the supplied Pine ranking logic.")
 else:
-    st.info("Loading NSE index data…")
+    st.info("Loading TradingView index data…")
