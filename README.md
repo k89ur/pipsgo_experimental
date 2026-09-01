@@ -1,46 +1,33 @@
-# NSE Relative Strength Scanner
+# NIFTY Index Relative Strength
 
-Minimal Streamlit app for an IBD-style relative strength ranking of NSE equities.
+Minimal Streamlit app that reproduces the supplied Pine Script's 28-index IBD-style RS calculation.
 
-## What it does
+## Calculation
 
-1. Loads the NSE equity universe.
-2. Downloads up to 2 years of daily data from Yahoo Finance.
-3. Calculates 3M, 6M, 9M and 12M returns.
-4. Creates a weighted raw RS score:
-   - 3M: 40%
-   - 6M: 20%
-   - 9M: 20%
-   - 12M: 20%
-5. Converts the score to a 1–99 percentile-style RS Rating.
-6. Filters by RS, 52-week high distance and optional MA trend conditions.
-7. Exports the result as CSV.
+- Exact 28-index universe from the supplied script
+- NIFTY 50 benchmark
+- 63 trading bars: 40%
+- 126 trading bars: 20%
+- 189 trading bars: 20%
+- 252 trading bars: 20%
+- Relative performance = index return minus NIFTY 50 return
+- RS 1–99 = the supplied Pine percentile/ranking formula
 
-This is an IBD-style approximation. IBD's exact RS Rating methodology is proprietary.
+## Data
+
+The app uses NSE historical index data as the primary source rather than guessing Yahoo Finance ticker mappings. Missing NSE series are reported as unavailable; they are never replaced with another instrument.
 
 ## Run in GitHub Codespaces
 
-Open the repository in a Codespace, then run:
-
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py --server.address 0.0.0.0
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-Codespaces should offer to open/forward port 8501.
+Open forwarded port **8501**.
 
-## GitHub workflow
+The first page load automatically runs the scan. **Refresh RS** forces a fresh NSE download.
 
-```bash
-git add .
-git commit -m "Initial NSE RS scanner"
-git push
-```
+## Important
 
-## Notes
-
-- Yahoo Finance can throttle or temporarily fail requests.
-- NSE can occasionally block automated downloads. The app includes `symbols.csv` as a fallback universe.
-- For a production-grade scanner, add caching, retry/backoff, a persistent data store and a more reliable market-data provider.
+This is an IBD-style approximation based on the supplied Pine formula. It is not IBD's proprietary RS Rating.
