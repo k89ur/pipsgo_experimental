@@ -19,10 +19,11 @@ st.caption("28 NIFTY indices · IBD-style RS · NIFTY 50 benchmark")
 if "index_result" not in st.session_state:
     st.session_state.index_result = None
 
-run = st.button("↻  Refresh RS", type="primary")
+refresh = st.button("↻  Refresh RS", type="primary")
 
-if run or st.session_state.index_result is None:
-    progress = st.progress(0, text="Loading market data…")
+# Automatically calculate on first page load. Refresh explicitly recalculates.
+if refresh or st.session_state.index_result is None:
+    progress = st.progress(0, text="Connecting to NSE…")
     try:
         def update(done, total, message):
             progress.progress(min(done / max(total, 1), 1.0), text=f"{message} · {done}/{total}")
@@ -32,18 +33,19 @@ if run or st.session_state.index_result is None:
         progress.empty()
     except Exception as e:
         progress.empty()
-        st.error(f"Data refresh failed: {e}")
+        st.error(f"NSE data refresh failed: {e}")
         st.stop()
 
 df = st.session_state.index_result
 stats = st.session_state.get("index_stats", {})
 
 if df is not None:
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Indices", stats.get("universe", 28))
     c2.metric("Calculated", stats.get("available", 0))
     asof = stats.get("as_of")
     c3.metric("Latest data", asof.strftime("%d %b %Y") if hasattr(asof, "strftime") else "—")
+    c4.metric("Source", "NSE")
 
     st.divider()
     search = st.text_input("Search index", placeholder="BANKNIFTY, AUTO, METAL…", label_visibility="collapsed")
@@ -68,6 +70,6 @@ if df is not None:
     )
 
     st.download_button("Export CSV", df.to_csv(index=False).encode("utf-8"), "nifty_index_rs.csv", "text/csv")
-    st.caption("The calculation follows the supplied Pine weighting and 1–99 ranking logic. Data availability is reported rather than silently substituted.")
+    st.caption("Formula: relative performance vs NIFTY 50, weighted 40% / 20% / 20% / 20%, then converted to 1–99 using the supplied Pine ranking logic.")
 else:
-    st.info("Press Refresh RS to calculate the ranking.")
+    st.info("Loading NSE index data…")
