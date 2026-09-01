@@ -5,7 +5,7 @@ from index_rs_engine import run_index_scan
 if "index_result" not in st.session_state:
     st.session_state.index_result = None
 
-st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-size:.9rem;font-weight:800;letter-spacing:.28em;line-height:1;color:#f3f5f7;margin:.05rem 0 .7rem"><span style="color:#35d07f">PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">NIFTY Relative Strength</div><div class="page-sub">28 industries · IBD-style relative strength · Pine-compatible daily calculation</div></div>', unsafe_allow_html=True)
 
 main, side = st.columns([4.7, 1.35], gap="large")
@@ -64,13 +64,13 @@ with main:
             else: fg="#ff6673"
             s=f"color:{fg};font-weight:700;"; styles[si]=s; styles[ri]=s; return styles
         show["TradingView"]=show["INDEX"].map(lambda x:f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
-        tool_spacer, tool1, tool2 = st.columns([7.7, 0.8, 0.8])
+        tool_spacer, tool1, tool2 = st.columns([7.8, 0.8, 1.4])
         with tool1:
-            with st.popover("👁", use_container_width=True):
+            with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
                 st.caption("Columns")
                 selected=st.multiselect("Show columns",list(show.columns),default=list(show.columns),label_visibility="collapsed",key="index_columns")
         with tool2:
-            st.download_button("↓",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",use_container_width=True,key="index_csv")
+            st.download_button("⇩ Export CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",use_container_width=True,key="index_csv",help="Download CSV")
         if selected:
             show=show[selected]
         st.dataframe(show.style.apply(style,axis=1),use_container_width=True,hide_index=True,height=min(700,95+max(len(show),1)*36),column_config={
