@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Callable, Optional
@@ -38,14 +37,8 @@ def get_nse_symbols() -> list[str]:
         raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
 
 
-@lru_cache(maxsize=128)
-def _download_batch_cached(symbols: tuple[str, ...]) -> dict[str, pd.DataFrame]:
-    """Download one immutable ticker batch and cache it briefly in-process.
-
-    The returned price history is unchanged from the previous implementation.
-    Caching only avoids downloading the exact same batch repeatedly during the
-    same Streamlit process; it does not alter any calculation or filter.
-    """
+def _download_batch(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Download one fresh batch; network scheduling is parallelized by run_scan."""
     tickers = [f"{s}.NS" for s in symbols]
     raw = yf.download(
         tickers=tickers,
@@ -79,11 +72,6 @@ def _download_batch_cached(symbols: tuple[str, ...]) -> dict[str, pd.DataFrame]:
         if "Close" in raw.columns:
             result[s] = raw.dropna(subset=["Close"])
     return result
-
-
-def _download_batch(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Compatibility wrapper used by callers/tests."""
-    return _download_batch_cached(tuple(symbols))
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
@@ -150,24 +138,23 @@ def _sector_results(symbols: list[str]) -> dict[str, str]:
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
              use_minervini: bool = True, batch_size: int = 50,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    """Run the stock scan with the original calculations and filters.
+    """Run the stock scan with original calculations and filters.
 
-    Performance changes are limited to network scheduling/caching and sector
-    lookup concurrency. The price data, lookbacks, RS formula, percentile
-    rating, Minervini filter, sorting, and result columns remain unchanged.
+    Speed improvements are restricted to parallel network work and concurrent
+    sector enrichment. Every scan downloads fresh market data, so Refresh/Run
+    always reflects the current Yahoo Finance response.
     """
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
 
-    # Download several independent batches concurrently. Each yfinance call
-    # still uses its normal internal threading; only a small number of batches
-    # run at once to avoid an aggressive request burst against Yahoo.
+    # A small outer pool lets independent Yahoo batches overlap network waits.
+    # The existing yfinance internal threading remains enabled inside each call.
     workers = min(3, len(batches))
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_download_batch_cached, tuple(batch)): (i, batch) for i, batch in enumerate(batches)}
+        futures = {executor.submit(_download_batch, batch): batch for batch in batches}
         completed = 0
         for future in as_completed(futures):
-            _, batch = futures[future]
+            batch = futures[future]
             try:
                 data = future.result()
             except Exception:
@@ -196,8 +183,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
-    # Sector enrichment remains after all filters. Only network lookup
-    # scheduling changes: final matches are resolved concurrently.
+    # Sector enrichment remains after all filters. Only lookup scheduling
+    # changed; sector values never influence RS or any scan filter.
     if not df.empty:
         sectors = _sector_results(df["Symbol"].astype(str).tolist())
         df["Sector"] = [sectors.get(s, "—") for s in df["Symbol"].astype(str)]
