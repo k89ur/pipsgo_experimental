@@ -64,14 +64,14 @@ with main:
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
 
-        # Tiny table actions: aligned directly above the table at the far right.
-        action_spacer, eye_action, csv_action = st.columns([10, 0.42, 0.82])
+        # Minimal icon actions, aligned to the table's far-right edge.
+        action_spacer, eye_action, csv_action = st.columns([10, 0.55, 0.55])
         with eye_action:
             with st.popover(":material/visibility:", help="Select columns"):
                 st.caption("Columns")
                 selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
         with csv_action:
-            st.download_button("CSV", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
+            st.download_button(" ", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
         if selected:
             shown = shown[selected]
         st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
