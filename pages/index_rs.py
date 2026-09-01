@@ -66,18 +66,23 @@ with main:
             else: fg="#ff6673"
             s=f"color:{fg};font-weight:700;"; styles[si]=s; styles[ri]=s; return styles
         show["TradingView"]=show["INDEX"].map(lambda x:f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
-        # Tiny table actions: aligned directly above the table at the far right.
-        tool_spacer, eye_action, csv_action = st.columns([10, 0.42, 0.82])
-        with eye_action:
-            with st.popover(":material/visibility:", help="Select columns"):
-                st.caption("Columns")
-                selected=st.multiselect("Show columns",list(show.columns),default=list(show.columns),label_visibility="collapsed",key="index_columns")
-        with csv_action:
-            st.download_button("CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",icon=":material/download:",use_container_width=True,key="index_csv",help="Export CSV")
-        if selected:
-            show=show[selected]
-        st.dataframe(show.style.apply(style,axis=1),use_container_width=True,hide_index=True,height=min(700,95+max(len(show),1)*36),column_config={
+
+        all_columns = list(show.columns)
+        saved_columns = st.session_state.get("index_columns", all_columns)
+        saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
+        shown_for_table = show[saved_columns]
+
+        st.dataframe(shown_for_table.style.apply(style,axis=1),use_container_width=True,hide_index=True,height=min(700,95+max(len(shown_for_table),1)*36),column_config={
             "Rank":st.column_config.NumberColumn("#",width="small"),"INDEX":st.column_config.TextColumn("INDEX",width="medium"),"Strength":st.column_config.TextColumn("STRENGTH",width="small"),"RS 1-99":st.column_config.NumberColumn("RS",format="%d",width="small"),"Raw RS":st.column_config.NumberColumn("RAW RS",format="%.2f",width="small"),"3M %":st.column_config.NumberColumn("3M",format="%.2f"),"6M %":st.column_config.NumberColumn("6M",format="%.2f"),"9M %":st.column_config.NumberColumn("9M",format="%.2f"),"12M %":st.column_config.NumberColumn("12M",format="%.2f"),"LTP":st.column_config.NumberColumn("LTP",format="%.2f"),"Status":st.column_config.TextColumn("STATUS",width="small"),"TradingView":st.column_config.LinkColumn("CHART",display_text="Open ↗",width="small")})
-        st.markdown(f'<div class="table-foot">Showing {len(show):,} of {len(df):,} indices · sorted by RS</div>',unsafe_allow_html=True)
+
+        eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
+        with eye_action:
+            with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
+                st.caption("Columns")
+                st.multiselect("Show columns", all_columns, default=saved_columns, label_visibility="collapsed", key="index_columns")
+        with csv_action:
+            st.download_button("Export CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",use_container_width=True,key="index_csv",help="Download CSV")
+
+        st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} indices · sorted by RS</div>',unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>Strong 80–99 <span class="dot" style="background:#f3b94b"></span>Middle 50–79 <span class="dot" style="background:#ff6673"></span>Weak 1–49</div>',unsafe_allow_html=True)
         st.markdown('<div class="footer">TradingView daily bars · 63 / 126 / 189 / 252 trading bars · weighted 40% / 20% / 20% / 20% · Pine-compatible 1–99 ranking.</div>',unsafe_allow_html=True)
