@@ -57,6 +57,16 @@ with main:
             q = search.strip(); view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Sector"].str.contains(q, case=False, na=False)]
         display_cols = ["Symbol", "Sector", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "TradingView"]
         shown = view[[c for c in display_cols if c in view.columns]].copy()
+
+        # Restore the normal/original table action size. The controls are rendered
+        # below the table, so they no longer consume space above the results.
+        all_columns = list(shown.columns)
+        saved_columns = st.session_state.get("stock_columns", all_columns)
+        saved_columns = [c for c in saved_columns if c in all_columns]
+        if not saved_columns:
+            saved_columns = all_columns
+        shown_for_table = shown[saved_columns]
+
         def stock_style(row):
             styles = [""] * len(row)
             if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
@@ -64,24 +74,22 @@ with main:
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
 
-        # True icon-only actions. They sit immediately above the table at its far right.
-        action_row = st.container()
-        with action_row:
-            action_spacer, eye_action, csv_action = st.columns([10, 0.5, 0.5])
-            with eye_action:
-                with st.popover("", icon=":material/visibility:", help="Select columns"):
-                    st.caption("Columns")
-                    selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
-            with csv_action:
-                st.download_button("", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", use_container_width=True, key="stock_csv", help="Export CSV")
-        if selected:
-            shown = shown[selected]
-        st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
+        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={
             "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Sector": st.column_config.TextColumn("SECTOR", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
             "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"),
             "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("FROM HIGH", format="%.1f%%"), "50 DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"), "150 DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"), "200 DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
             "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
         })
-        st.markdown(f'<div class="table-foot">Showing {len(shown):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
+
+        # Original-size actions, now placed at the bottom-left of the table.
+        eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
+        with eye_action:
+            with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
+                st.caption("Columns")
+                st.multiselect("Show columns", all_columns, default=saved_columns, label_visibility="collapsed", key="stock_columns")
+        with csv_action:
+            st.download_button("Export CSV", shown_for_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv", help="Download CSV")
+
+        st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>',unsafe_allow_html=True)
         st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filter = price above 50 / 150 / 200 DMA with configurable rising-period checks. Sector is a best-effort Yahoo Finance classification.</div>', unsafe_allow_html=True)
