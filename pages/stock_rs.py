@@ -5,14 +5,18 @@ from rs_engine import run_scan
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
 
+# Page-local brand. st.navigation renders page content separately from app.py.
+st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
+st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable 52-week and Minervini filters</div></div>', unsafe_allow_html=True)
+
 main, side = st.columns([4.7, 1.35], gap="large")
 with side:
-    st.markdown('<div class="right-panel"><div class="right-title">Scanner status</div>', unsafe_allow_html=True)
-    status_slot = st.empty(); stats_slot = st.empty()
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div class="right-title">Scanner status</div>', unsafe_allow_html=True)
+        status_slot = st.empty()
+        stats_slot = st.empty()
 
 with main:
-    st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable 52-week and Minervini filters</div></div>', unsafe_allow_html=True)
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">Scan settings</div>', unsafe_allow_html=True)
         c1, c2, c3, c4, c5 = st.columns(5)
@@ -63,8 +67,19 @@ with main:
                 fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
-        styled = shown.style.apply(stock_style, axis=1)
-        st.dataframe(styled, use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
+        # Compact controls at the table's top-right; dataframe itself retains its native fullscreen control.
+        left, tools, _ = st.columns([4.4, 1.65, 0.45])
+        with tools:
+            t1, t2 = st.columns(2)
+            with t1:
+                with st.popover("👁", use_container_width=True):
+                    st.caption("Columns")
+                    selected = st.multiselect("Show columns", list(shown.columns), default=list(shown.columns), label_visibility="collapsed", key="stock_columns")
+            with t2:
+                st.download_button("↓", shown.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv")
+        if selected:
+            shown = shown[selected]
+        st.dataframe(shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown),1)*36), column_config={
             "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Sector": st.column_config.TextColumn("SECTOR", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
             "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"),
             "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("FROM HIGH", format="%.1f%%"), "50 DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"), "150 DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"), "200 DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
