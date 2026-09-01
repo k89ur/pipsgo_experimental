@@ -15,7 +15,9 @@ with side:
         status_slot = st.empty(); stats_slot = st.empty()
 
 with main:
-    run_index = st.button("↻  Refresh Index RS", type="primary")
+    with st.container(border=True):
+        st.markdown('<div class="section-title" style="margin-top:.05rem">Scan settings</div>', unsafe_allow_html=True)
+        run_index = st.button("↻  Refresh Index RS", type="primary")
     if run_index or st.session_state.index_result is None:
         progress = status_slot.progress(0, text="Connecting to TradingView…")
         try:
@@ -64,13 +66,14 @@ with main:
             else: fg="#ff6673"
             s=f"color:{fg};font-weight:700;"; styles[si]=s; styles[ri]=s; return styles
         show["TradingView"]=show["INDEX"].map(lambda x:f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
-        tool_spacer, tool1, tool2 = st.columns([7.7, 0.8, 1.8])
-        with tool1:
-            with st.popover(":material/visibility:", use_container_width=True):
+        # Tiny table actions: aligned directly above the table at the far right.
+        tool_spacer, eye_action, csv_action = st.columns([10, 0.42, 0.82])
+        with eye_action:
+            with st.popover(":material/visibility:", help="Select columns"):
                 st.caption("Columns")
                 selected=st.multiselect("Show columns",list(show.columns),default=list(show.columns),label_visibility="collapsed",key="index_columns")
-        with tool2:
-            st.download_button("Export CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",use_container_width=True,key="index_csv",help="Download CSV")
+        with csv_action:
+            st.download_button("CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",icon=":material/download:",use_container_width=True,key="index_csv",help="Export CSV")
         if selected:
             show=show[selected]
         st.dataframe(show.style.apply(style,axis=1),use_container_width=True,hide_index=True,height=min(700,95+max(len(show),1)*36),column_config={
