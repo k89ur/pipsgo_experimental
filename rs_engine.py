@@ -110,69 +110,28 @@ def _percentile_rating(scores: pd.Series) -> pd.Series:
     return pct.round().clip(1, 99).astype(int)
 
 
-_NSE_SESSION = requests.Session()
-_NSE_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
-    "Accept": "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": NSE_HOME + "/",
-})
-_NSE_SESSION_READY = False
-
-
-def _nse_quote(symbol: str) -> dict:
-    """Get one NSE quote JSON response using a browser-like session."""
-    global _NSE_SESSION_READY
-    if not _NSE_SESSION_READY:
-        try:
-            _NSE_SESSION.get(NSE_HOME, timeout=10)
-        except Exception:
-            pass
-        _NSE_SESSION_READY = True
-    url = f"{NSE_HOME}/api/quote-equity?symbol={quote(symbol, safe='')}"
-    response = _NSE_SESSION.get(url, timeout=10)
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict) or "industryInfo" not in data:
-        raise ValueError("NSE quote response has no industryInfo")
-    return data
-
-
 @lru_cache(maxsize=2048)
 def _sector_for_symbol(symbol: str) -> str:
-    """Primary sector source: official NSE industry classification; Yahoo is fallback."""
-    try:
-        info = _nse_quote(symbol).get("industryInfo") or {}
-        sector = info.get("sector") or info.get("industry") or info.get("basicIndustry")
-        if sector:
-            return str(sector)
-    except Exception:
-        pass
+    """Best-effort Yahoo sector lookup for one stock."""
     try:
         info = yf.Ticker(f"{symbol}.NS").info
-        return str(info.get("sector") or info.get("industry") or "—")
+        value = info.get("sector") or info.get("industry")
+        if value:
+            return str(value)
     except Exception:
-        return "—"
+        pass
+    return "—"
 
 
 def _sector_results(symbols: list[str]) -> dict[str, str]:
-    """Resolve sectors sequentially to avoid NSE/Yahoo metadata throttling."""
-    result: dict[str, str] = {}
-    for symbol in symbols:
-        try:
-            result[symbol] = _sector_for_symbol(symbol)
-        except Exception:
-            result[symbol] = "—"
-    return result
+    """Resolve sectors only for final matches; failures remain visible as —."""
+    return {symbol: _sector_for_symbol(symbol) for symbol in symbols}
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
              use_minervini: bool = True, batch_size: int = 50,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    """Run the stock scan with original calculations and filters.
-
-    Sector classification is metadata only and does not influence RS or filters.
-    """
+    """Run the stock scan with original calculations and filters."""
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
 
@@ -210,6 +169,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
+    # IMPORTANT: Sector metadata is intentionally added AFTER all core scan filters.
+    # This keeps sector lookup completely independent of the scan calculations.
     if not df.empty:
         sectors = _sector_results(df["Symbol"].astype(str).tolist())
         df["Sector"] = [sectors.get(s, "—") for s in df["Symbol"].astype(str)]
