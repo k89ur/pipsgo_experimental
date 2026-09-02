@@ -99,42 +99,45 @@ def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
     return {symbol: metadata.get(symbol, ("Not Available", "Not Available")) for symbol in symbols}
 
 
-def _load_stock_indices() -> tuple[dict[str, tuple[str, str, str, str, str]], str]:
-    """Load index metadata and return a diagnostic status alongside the data."""
+def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
+    """Load external stock -> index 1-5 memberships from the public Drive CSV."""
     urls = [
         STOCK_INDEX_URL,
         "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro",
         "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t",
     ]
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,application/octet-stream,*/*"}
-    errors = []
     for url in urls:
         try:
             r = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
             r.raise_for_status()
-            content_type = r.headers.get("Content-Type", "")
             content = r.content
-            if not content: raise ValueError("empty response")
+            if not content:
+                continue
             metadata = pd.read_csv(io.BytesIO(content))
             normalized = {str(c).replace("\ufeff", "").strip().upper(): c for c in metadata.columns}
-            symbol_col = normalized.get("SYMBOL"); index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
-            if not symbol_col or any(c is None for c in index_cols): raise ValueError(f"columns received: {list(metadata.columns)}")
-            metadata = metadata[[symbol_col, *index_cols]].copy(); metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
+            symbol_col = normalized.get("SYMBOL")
+            index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
+            if not symbol_col or any(c is None for c in index_cols):
+                continue
+            metadata = metadata[[symbol_col, *index_cols]].copy()
+            metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
             metadata["Symbol"] = metadata["Symbol"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper()
             metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
             for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]:
-                metadata[col] = metadata[col].fillna("").astype(str).str.strip().replace("", "Not Available")
-            data = {row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in metadata.itertuples(index=False, name=None)}
-            return data, f"OK · {len(data):,} rows · Content-Type: {content_type or 'unknown'} · URL {urls.index(url)+1}"
-        except Exception as e:
-            errors.append(f"URL {urls.index(url)+1}: {type(e).__name__}: {str(e)[:180]}")
-    return {}, "FAILED · " + " | ".join(errors)
+                metadata[col] = metadata[col].fillna("").astype(str).str.strip()
+                metadata[col] = metadata[col].replace("", "Not Available")
+            return {row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in metadata.itertuples(index=False, name=None)}
+        except Exception:
+            continue
+    return {}
 
 
-def _stock_index_results(symbols: list[str]) -> tuple[dict[str, tuple[str, str, str, str, str]], str]:
-    metadata, status = _load_stock_indices()
+def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, str, str]]:
+    """Resolve five index membership fields; unknown symbols remain Not Available."""
+    metadata = _load_stock_indices()
     missing = ("Not Available",) * 5
-    return {symbol: metadata.get(symbol, missing) for symbol in symbols}, status
+    return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_minervini: bool = True, batch_size: int = 50, progress_callback: Optional[Callable[[int, int, str], None]] = None):
@@ -159,10 +162,9 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_minervini: df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
-    index_status = "Not checked"; index_metadata = {}
     if not df.empty:
         industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
-        index_metadata, index_status = _stock_index_results(df["Symbol"].astype(str).tolist())
+        index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist())
         df["Industry"] = [industry_metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
         index_values = [index_metadata.get(s, ("Not Available",) * 5) for s in df["Symbol"].astype(str)]
         for i, col in enumerate(["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]): df[col] = [values[i] for values in index_values]
@@ -173,6 +175,5 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
     columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
-    matched = int((df["Index"] != "Not Available").sum()) if not df.empty else 0
-    stats = {"universe": total, "coverage": (successful / total * 100) if total else 0, "index_status": index_status, "index_rows": len(index_metadata), "index_matched": matched}
+    stats = {"universe": total, "coverage": (successful / total * 100) if total else 0}
     return df, stats
