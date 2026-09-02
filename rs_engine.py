@@ -40,7 +40,7 @@ def get_nse_symbols() -> list[str]:
 
 
 def _download_batch(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Download one fresh batch; network scheduling is parallelized by run_scan."""
+    """Download one batch from Yahoo Finance."""
     tickers = [f"{s}.NS" for s in symbols]
     raw = yf.download(
         tickers=tickers,
@@ -135,27 +135,25 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
 
-    workers = min(3, len(batches))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_download_batch, batch): batch for batch in batches}
-        completed = 0
-        for future in as_completed(futures):
-            batch = futures[future]
+    # Use only yfinance's internal threading. Avoid an outer ThreadPoolExecutor
+    # because Streamlit deployments can hit process/thread limits.
+    completed = 0
+    for batch in batches:
+        try:
+            data = _download_batch(batch)
+        except Exception:
+            data = {}
+        successful += len(data)
+        for symbol, x in data.items():
             try:
-                data = future.result()
+                m = _metrics(symbol, x, rising_days)
+                if m:
+                    rows.append(m)
             except Exception:
-                data = {}
-            successful += len(data)
-            for symbol, x in data.items():
-                try:
-                    m = _metrics(symbol, x, rising_days)
-                    if m:
-                        rows.append(m)
-                except Exception:
-                    continue
-            completed += len(batch)
-            if progress_callback:
-                progress_callback(min(completed, total), total, "Downloading & calculating")
+                continue
+        completed += len(batch)
+        if progress_callback:
+            progress_callback(min(completed, total), total, "Downloading & calculating")
 
     if not rows:
         raise RuntimeError("No usable stock data was returned.")
@@ -169,8 +167,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
-    # IMPORTANT: Sector metadata is intentionally added AFTER all core scan filters.
-    # This keeps sector lookup completely independent of the scan calculations.
+    # Sector metadata remains outside all scan calculations and filters.
     if not df.empty:
         sectors = _sector_results(df["Symbol"].astype(str).tolist())
         df["Sector"] = [sectors.get(s, "—") for s in df["Symbol"].astype(str)]
