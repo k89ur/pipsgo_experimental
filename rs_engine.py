@@ -11,7 +11,7 @@ import yfinance as yf
 
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
-STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
+STOCK_INDEX_URL = "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t"
 
 
 def get_nse_symbols() -> list[str]:
@@ -151,9 +151,8 @@ def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
     }
 
 
-@lru_cache(maxsize=1)
 def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
-    """Load external stock -> index 1-5 memberships once per process."""
+    """Load external stock -> index 1-5 memberships; refresh once per scan."""
     try:
         r = requests.get(
             STOCK_INDEX_URL,
@@ -171,13 +170,12 @@ def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
 
         metadata = metadata[[symbol_col, *index_cols]].copy()
         metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
-        metadata["Symbol"] = (
-            metadata["Symbol"].astype(str).str.strip().str.upper().str.replace(r"\.NS$", "", regex=True)
-        )
+        metadata["Symbol"] = metadata["Symbol"].astype(str).str.strip().str.upper()
+        metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
+
         for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]:
             metadata[col] = metadata[col].fillna("").astype(str).str.strip()
             metadata[col] = metadata[col].replace("", "Not Available")
-        metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
 
         return {
             row.Symbol: (row[1], row[2], row[3], row[4], row[5])
