@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import io
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Callable, Optional
-from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -12,7 +10,7 @@ import requests
 import yfinance as yf
 
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
-NSE_HOME = "https://www.nseindia.com"
+SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 
 
 def get_nse_symbols() -> list[str]:
@@ -110,22 +108,46 @@ def _percentile_rating(scores: pd.Series) -> pd.Series:
     return pct.round().clip(1, 99).astype(int)
 
 
-@lru_cache(maxsize=2048)
-def _sector_for_symbol(symbol: str) -> str:
-    """Best-effort Yahoo sector lookup for one stock."""
+@lru_cache(maxsize=1)
+def _load_sector_industry() -> dict[str, tuple[str, str]]:
+    """Load the external Symbol -> (Sector, Industry) metadata database once per process."""
     try:
-        info = yf.Ticker(f"{symbol}.NS").info
-        value = info.get("sector") or info.get("industry")
-        if value:
-            return str(value)
+        r = requests.get(
+            SECTOR_INDUSTRY_URL,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        metadata = pd.read_csv(io.BytesIO(r.content))
+        required = {"Symbol", "Sector", "Industry"}
+        if not required.issubset(metadata.columns):
+            raise ValueError("Sector/industry CSV is missing required columns")
+
+        metadata = metadata[["Symbol", "Sector", "Industry"]].copy()
+        metadata["Symbol"] = metadata["Symbol"].astype(str).str.strip().str.upper()
+        for col in ["Sector", "Industry"]:
+            metadata[col] = metadata[col].fillna("").astype(str).str.strip()
+            metadata[col] = metadata[col].replace("", "Not Available")
+        metadata = metadata[
+            ~metadata["Symbol"].isin(["", "NAN", "NONE"])
+        ].drop_duplicates("Symbol")
+
+        return {
+            row.Symbol: (row.Sector, row.Industry)
+            for row in metadata.itertuples(index=False)
+        }
     except Exception:
-        pass
-    return "—"
+        # Metadata is optional. A failed metadata request must never stop the stock scan.
+        return {}
 
 
-def _sector_results(symbols: list[str]) -> dict[str, str]:
-    """Resolve sectors only for final matches; failures remain visible as —."""
-    return {symbol: _sector_for_symbol(symbol) for symbol in symbols}
+def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
+    """Resolve Sector and Industry locally; unknown symbols remain Not Available."""
+    metadata = _load_sector_industry()
+    return {
+        symbol: metadata.get(symbol, ("Not Available", "Not Available"))
+        for symbol in symbols
+    }
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
@@ -167,15 +189,17 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
-    # Sector metadata remains outside all scan calculations and filters.
+    # Metadata is informational only and is never used in scan calculations or filters.
     if not df.empty:
-        sectors = _sector_results(df["Symbol"].astype(str).tolist())
-        df["Sector"] = [sectors.get(s, "—") for s in df["Symbol"].astype(str)]
+        metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
+        df["Sector"] = [metadata.get(s, ("Not Available", "Not Available"))[0] for s in df["Symbol"].astype(str)]
+        df["Industry"] = [metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
     else:
         df["Sector"] = pd.Series(dtype=str)
+        df["Industry"] = pd.Series(dtype=str)
 
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
-    columns = ["Symbol", "Sector", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %",
+    columns = ["Symbol", "Sector", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %",
                "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
     stats = {"universe": total, "coverage": (successful / total * 100) if total else 0}
