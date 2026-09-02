@@ -20,76 +20,49 @@ def get_nse_symbols() -> list[str]:
     """Get the current NSE equity universe. Falls back to bundled symbols.csv."""
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
     try:
-        r = requests.get(NSE_URL, headers=headers, timeout=20)
-        r.raise_for_status()
-        df = pd.read_csv(io.BytesIO(r.content))
-        col = next((c for c in ["SYMBOL", "Symbol", "symbol"] if c in df.columns), None)
-        if not col:
-            raise ValueError("NSE CSV has no SYMBOL column")
-        symbols = df[col].astype(str).str.strip().replace("nan", np.nan).dropna().unique().tolist()
-        symbols = [s for s in symbols if s and s != "SYMBOL"]
-        if len(symbols) >= 100:
-            return sorted(symbols)
-    except Exception:
-        pass
+        r = requests.get(NSE_URL, headers=headers, timeout=20); r.raise_for_status()
+        df = pd.read_csv(io.BytesIO(r.content)); col = next((c for c in ["SYMBOL", "Symbol", "symbol"] if c in df.columns), None)
+        if not col: raise ValueError("NSE CSV has no SYMBOL column")
+        symbols = df[col].astype(str).str.strip().replace("nan", np.nan).dropna().unique().tolist(); symbols = [s for s in symbols if s and s != "SYMBOL"]
+        if len(symbols) >= 100: return sorted(symbols)
+    except Exception: pass
     try:
-        fallback = pd.read_csv("symbols.csv")
-        col = "Symbol" if "Symbol" in fallback.columns else fallback.columns[0]
+        fallback = pd.read_csv("symbols.csv"); col = "Symbol" if "Symbol" in fallback.columns else fallback.columns[0]
         return sorted(fallback[col].dropna().astype(str).str.strip().unique())
-    except Exception as e:
-        raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
+    except Exception as e: raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
 
 
 def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
     """Extract usable per-symbol frames from a yfinance multi-ticker response."""
     result: dict[str, pd.DataFrame] = {}
-    if raw is None or raw.empty:
-        return result
+    if raw is None or raw.empty: return result
     if isinstance(raw.columns, pd.MultiIndex):
         level0 = set(raw.columns.get_level_values(0)); level1 = set(raw.columns.get_level_values(1))
         for s in symbols:
             t = f"{s}.NS"
             try:
-                if t in level0:
-                    x = raw[t].copy()
-                elif t in level1:
-                    x = raw.xs(t, axis=1, level=1).copy()
-                else:
-                    continue
-                if "Close" in x.columns and not x["Close"].dropna().empty:
-                    result[s] = x.dropna(subset=["Close"])
-            except Exception:
-                continue
+                if t in level0: x = raw[t].copy()
+                elif t in level1: x = raw.xs(t, axis=1, level=1).copy()
+                else: continue
+                if "Close" in x.columns and not x["Close"].dropna().empty: result[s] = x.dropna(subset=["Close"])
+            except Exception: continue
     else:
         s = symbols[0]
-        if "Close" in raw.columns:
-            result[s] = raw.dropna(subset=["Close"])
+        if "Close" in raw.columns: result[s] = raw.dropna(subset=["Close"])
     return result
 
 
 def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFrame]:
     """Download a batch with bounded retries."""
-    tickers = [f"{s}.NS" for s in symbols]
-    last_result: dict[str, pd.DataFrame] = {}
+    tickers = [f"{s}.NS" for s in symbols]; last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
-            raw = yf.download(
-                tickers=tickers,
-                period="2y",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                group_by="ticker",
-                threads=True,
-            )
+            raw = yf.download(tickers=tickers, period="2y", interval="1d", auto_adjust=True, progress=False, group_by="ticker", threads=True)
             result = _extract_downloaded(raw, symbols)
-            if len(result) == len(symbols):
-                return result
+            if len(result) == len(symbols): return result
             last_result = result
-        except Exception:
-            pass
-        if attempt < retries - 1:
-            time.sleep(1.0 * (attempt + 1))
+        except Exception: pass
+        if attempt < retries - 1: time.sleep(1.0 * (attempt + 1))
     return last_result
 
 
@@ -97,99 +70,80 @@ def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """Recover missing symbols in small groups, with an individual fallback."""
     recovered: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 10):
-        group = symbols[start:start + 10]
-        recovered.update(_download_batch(group, retries=2))
-        if start + 10 < len(symbols):
-            time.sleep(0.25)
+        group = symbols[start:start + 10]; recovered.update(_download_batch(group, retries=2))
+        if start + 10 < len(symbols): time.sleep(0.25)
     remaining = [symbol for symbol in symbols if symbol not in recovered]
-    for symbol in remaining:
-        recovered.update(_download_batch([symbol], retries=2))
+    for symbol in remaining: recovered.update(_download_batch([symbol], retries=2))
     return recovered
 
 
 @lru_cache(maxsize=1)
 def _download_universe_cached(symbols_key: tuple[str, ...], batch_size: int = DEFAULT_BATCH_SIZE) -> dict[str, pd.DataFrame]:
     """Download one stable market-data snapshot and reuse it for later scans."""
-    symbols = list(symbols_key)
-    data: dict[str, pd.DataFrame] = {}
+    symbols = list(symbols_key); data: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), batch_size):
-        batch = symbols[start:start + batch_size]
-        batch_data = _download_batch(batch)
-        missing = [symbol for symbol in batch if symbol not in batch_data]
-        if missing:
-            batch_data.update(_download_missing(missing))
+        batch = symbols[start:start + batch_size]; batch_data = _download_batch(batch); missing = [symbol for symbol in batch if symbol not in batch_data]
+        if missing: batch_data.update(_download_missing(missing))
         data.update(batch_data)
     return data
 
 
 def clear_stock_data_cache() -> None:
-    """Force the next scan to download a fresh market-data snapshot."""
     _download_universe_cached.cache_clear()
 
 
 def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
-    """Return the current process's stable market-data snapshot."""
     data = _download_universe_cached(tuple(symbols), batch_size)
-    if progress_callback:
-        progress_callback(len(symbols), len(symbols), "Market data ready")
+    if progress_callback: progress_callback(len(symbols), len(symbols), "Market data ready")
     return data
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
-    if len(close) <= days:
-        return np.nan
-    now = float(close.iloc[-1]); old = float(close.iloc[-days - 1])
-    return (now / old - 1.0) * 100.0 if old else np.nan
+    if len(close) <= days: return np.nan
+    now = float(close.iloc[-1]); old = float(close.iloc[-days - 1]); return (now / old - 1.0) * 100.0 if old else np.nan
 
 
-def _metrics(symbol: str, x: pd.DataFrame, rising_days: int) -> dict:
+def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising: bool = False) -> dict:
     close = x["Close"].dropna().astype(float)
-    if len(close) < 200:
-        return {}
+    if len(close) < 200: return {}
     ltp = float(close.iloc[-1]); d50 = close.rolling(50).mean(); d150 = close.rolling(150).mean(); d200 = close.rolling(200).mean()
-    if len(d200.dropna()) <= rising_days:
-        return {}
     high_52w = float(close.tail(252).max()); from_high = (high_52w - ltp) / high_52w * 100.0 if high_52w else np.nan
-    return {"Symbol": symbol, "LTP": ltp, "3M %": _return_at_days(close, 63), "6M %": _return_at_days(close, 126), "9M %": _return_at_days(close, 189), "12M %": _return_at_days(close, 252), "50 DMA": float(d50.iloc[-1]), "150 DMA": float(d150.iloc[-1]), "200 DMA": float(d200.iloc[-1]), "50 DMA Rising": float(d50.iloc[-1]) > float(d50.iloc[-1-rising_days]), "150 DMA Rising": float(d150.iloc[-1]) > float(d150.iloc[-1-rising_days]), "200 DMA Rising": float(d200.iloc[-1]) > float(d200.iloc[-1-rising_days]), "52W High": high_52w, "From 52W High %": from_high, "History Days": len(close)}
+    row = {"Symbol": symbol, "LTP": ltp, "3M %": _return_at_days(close, 63), "6M %": _return_at_days(close, 126), "9M %": _return_at_days(close, 189), "12M %": _return_at_days(close, 252), "50 DMA": float(d50.iloc[-1]), "150 DMA": float(d150.iloc[-1]), "200 DMA": float(d200.iloc[-1]), "52W High": high_52w, "From 52W High %": from_high, "History Days": len(close)}
+    if calculate_ma_rising:
+        if len(d200.dropna()) <= rising_days: return {}
+        row.update({"50 DMA Rising": float(d50.iloc[-1]) > float(d50.iloc[-1-rising_days]), "150 DMA Rising": float(d150.iloc[-1]) > float(d150.iloc[-1-rising_days]), "200 DMA Rising": float(d200.iloc[-1]) > float(d200.iloc[-1-rising_days])})
+    return row
 
 
 def _percentile_rating(scores: pd.Series) -> pd.Series:
-    pct = scores.rank(method="average", pct=True) * 99
-    return pct.round().clip(1, 99).astype(int)
+    pct = scores.rank(method="average", pct=True) * 99; return pct.round().clip(1, 99).astype(int)
 
 
 @lru_cache(maxsize=1)
 def _load_sector_industry() -> dict[str, tuple[str, str]]:
     try:
-        r = requests.get(SECTOR_INDUSTRY_URL, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}, timeout=30); r.raise_for_status()
-        metadata = pd.read_csv(io.BytesIO(r.content)); required = {"Symbol", "Sector", "Industry"}
+        r = requests.get(SECTOR_INDUSTRY_URL, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}, timeout=30); r.raise_for_status(); metadata = pd.read_csv(io.BytesIO(r.content)); required = {"Symbol", "Sector", "Industry"}
         if not required.issubset(metadata.columns): raise ValueError("Sector/industry CSV is missing required columns")
         metadata = metadata[["Symbol", "Sector", "Industry"]].copy(); metadata["Symbol"] = metadata["Symbol"].astype(str).str.strip().str.upper()
         for col in ["Sector", "Industry"]: metadata[col] = metadata[col].fillna("").astype(str).str.strip().replace("", "Not Available")
         metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
         return {row.Symbol: (row.Sector, row.Industry) for row in metadata.itertuples(index=False)}
-    except Exception:
-        return {}
+    except Exception: return {}
 
 
 def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
-    metadata = _load_sector_industry()
-    return {symbol: metadata.get(symbol, ("Not Available", "Not Available")) for symbol in symbols}
+    metadata = _load_sector_industry(); return {symbol: metadata.get(symbol, ("Not Available", "Not Available")) for symbol in symbols}
 
 
 def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
-    """Load external stock -> index 1-5 memberships from the public Drive CSV."""
-    urls = [STOCK_INDEX_URL, "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro", "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t"]
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,application/octet-stream,*/*"}
+    urls = [STOCK_INDEX_URL, "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro", "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t"]; headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,application/octet-stream,*/*"}
     for url in urls:
         try:
             r = requests.get(url, headers=headers, timeout=30, allow_redirects=True); r.raise_for_status(); content = r.content
             if not content: continue
-            metadata = pd.read_csv(io.BytesIO(content)); normalized = {str(c).replace("\ufeff", "").strip().upper(): c for c in metadata.columns}
-            symbol_col = normalized.get("SYMBOL"); index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
+            metadata = pd.read_csv(io.BytesIO(content)); normalized = {str(c).replace("\ufeff", "").strip().upper(): c for c in metadata.columns}; symbol_col = normalized.get("SYMBOL"); index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
             if not symbol_col or any(c is None for c in index_cols): continue
-            metadata = metadata[[symbol_col, *index_cols]].copy(); metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
-            metadata["Symbol"] = metadata["Symbol"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper(); metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
+            metadata = metadata[[symbol_col, *index_cols]].copy(); metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]; metadata["Symbol"] = metadata["Symbol"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper(); metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
             for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]: metadata[col] = metadata[col].fillna("").astype(str).str.strip().replace("", "Not Available")
             return {row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in metadata.itertuples(index=False, name=None)}
         except Exception: continue
@@ -197,25 +151,19 @@ def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
 
 
 def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, str, str]]:
-    metadata = _load_stock_indices(); missing = ("Not Available",) * 5
-    return {symbol: metadata.get(symbol, missing) for symbol in symbols}
+    metadata = _load_stock_indices(); missing = ("Not Available",) * 5; return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    symbols = get_nse_symbols(); total = len(symbols)
-    data = _download_universe(symbols, batch_size=batch_size, progress_callback=progress_callback)
-    downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
+    symbols = get_nse_symbols(); total = len(symbols); data = _download_universe(symbols, batch_size=batch_size, progress_callback=progress_callback); downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
     rows = []
     for symbol, x in data.items():
         try:
-            m = _metrics(symbol, x, rising_days)
+            m = _metrics(symbol, x, rising_days, calculate_ma_rising=use_ma_rising)
             if m: rows.append(m)
-        except Exception:
-            continue
-    if not rows:
-        raise RuntimeError("No usable stock data was returned.")
-    df = pd.DataFrame(rows); ret_cols = ["3M %", "6M %", "9M %", "12M %"]; df = df.dropna(subset=ret_cols).copy()
-    df["Raw RS Score"] = df["3M %"] * 0.40 + df["6M %"] * 0.20 + df["9M %"] * 0.20 + df["12M %"] * 0.20; df["RS Rating"] = _percentile_rating(df["Raw RS Score"])
+        except Exception: continue
+    if not rows: raise RuntimeError("No usable stock data was returned.")
+    df = pd.DataFrame(rows); ret_cols = ["3M %", "6M %", "9M %", "12M %"]; df = df.dropna(subset=ret_cols).copy(); df["Raw RS Score"] = df["3M %"] * 0.40 + df["6M %"] * 0.20 + df["9M %"] * 0.20 + df["12M %"] * 0.20; df["RS Rating"] = _percentile_rating(df["Raw RS Score"])
     if use_min_price: df = df[df["LTP"] >= min_price].copy()
     if use_near_high: df = df[df["From 52W High %"] <= near_high_pct].copy()
     if use_min_rs: df = df[df["RS Rating"] >= min_rs].copy()
@@ -223,16 +171,9 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_ma_rising: df = df[df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
     if not df.empty:
-        industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist()); index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist())
-        df["Industry"] = [industry_metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
-        index_values = [index_metadata.get(s, ("Not Available",) * 5) for s in df["Symbol"].astype(str)]
+        industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist()); index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist()); df["Industry"] = [industry_metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]; index_values = [index_metadata.get(s, ("Not Available",) * 5) for s in df["Symbol"].astype(str)]
         for i, col in enumerate(["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]): df[col] = [values[i] for values in index_values]
-        df["Index"] = df[["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]].apply(lambda row: " • ".join(value for value in row if value != "Not Available") or "Not Available", axis=1)
-        df = df.drop(columns=["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"])
-    else:
-        df["Industry"] = pd.Series(dtype=str); df["Index"] = pd.Series(dtype=str)
-    df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
-    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]
-    df = df[columns]
-    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size}
-    return df, stats
+        df["Index"] = df[["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]].apply(lambda row: " • ".join(value for value in row if value != "Not Available") or "Not Available", axis=1); df = df.drop(columns=["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"])
+    else: df["Industry"] = pd.Series(dtype=str); df["Index"] = pd.Series(dtype=str)
+    df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str); columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]; df = df[columns]
+    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size}; return df, stats
