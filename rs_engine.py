@@ -11,6 +11,7 @@ import yfinance as yf
 
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
+STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 
 
 def get_nse_symbols() -> list[str]:
@@ -150,6 +151,50 @@ def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
     }
 
 
+@lru_cache(maxsize=1)
+def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
+    """Load external stock -> index 1-5 memberships once per process."""
+    try:
+        r = requests.get(
+            STOCK_INDEX_URL,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        metadata = pd.read_csv(io.BytesIO(r.content))
+
+        normalized = {str(c).strip().upper(): c for c in metadata.columns}
+        symbol_col = normalized.get("SYMBOL")
+        index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
+        if not symbol_col or any(c is None for c in index_cols):
+            raise ValueError("Stock index CSV is missing SYMBOL or INDEX 1-5 columns")
+
+        metadata = metadata[[symbol_col, *index_cols]].copy()
+        metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
+        metadata["Symbol"] = (
+            metadata["Symbol"].astype(str).str.strip().str.upper().str.replace(r"\.NS$", "", regex=True)
+        )
+        for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]:
+            metadata[col] = metadata[col].fillna("").astype(str).str.strip()
+            metadata[col] = metadata[col].replace("", "Not Available")
+        metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
+
+        return {
+            row.Symbol: (row[1], row[2], row[3], row[4], row[5])
+            for row in metadata.itertuples(index=False, name=None)
+        }
+    except Exception:
+        # Index metadata is optional. A failed request must never stop the stock scan.
+        return {}
+
+
+def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, str, str]]:
+    """Resolve five index membership fields; unknown symbols remain Not Available."""
+    metadata = _load_stock_indices()
+    missing = ("Not Available",) * 5
+    return {symbol: metadata.get(symbol, missing) for symbol in symbols}
+
+
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
              use_minervini: bool = True, batch_size: int = 50,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
@@ -191,15 +236,23 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
 
     # Metadata is informational only and is never used in scan calculations or filters.
     if not df.empty:
-        metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
-        df["Sector"] = [metadata.get(s, ("Not Available", "Not Available"))[0] for s in df["Symbol"].astype(str)]
-        df["Industry"] = [metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
+        industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
+        index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist())
+        df["Industry"] = [industry_metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
+        index_values = [index_metadata.get(s, ("Not Available",) * 5) for s in df["Symbol"].astype(str)]
+        for i, col in enumerate(["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]):
+            df[col] = [values[i] for values in index_values]
+        df["Index"] = df[["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]].apply(
+            lambda row: " • ".join(value for value in row if value != "Not Available") or "Not Available",
+            axis=1,
+        )
+        df = df.drop(columns=["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"])
     else:
-        df["Sector"] = pd.Series(dtype=str)
         df["Industry"] = pd.Series(dtype=str)
+        df["Index"] = pd.Series(dtype=str)
 
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
-    columns = ["Symbol", "Sector", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %",
+    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %",
                "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
     stats = {"universe": total, "coverage": (successful / total * 100) if total else 0}
