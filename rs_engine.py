@@ -132,18 +132,10 @@ def _sector_results(symbols: list[str]) -> dict[str, str]:
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
              use_minervini: bool = True, batch_size: int = 50,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    """Run the stock scan with original calculations and filters.
-
-    Speed improvements are restricted to parallel price-data downloads. Sector
-    metadata is intentionally resolved conservatively because Yahoo metadata
-    endpoints can throttle concurrent requests. Sector values never influence
-    RS or any scan filter.
-    """
+    """Run the stock scan with original calculations and filters."""
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
 
-    # A small outer pool lets independent Yahoo batches overlap network waits.
-    # The existing yfinance internal threading remains enabled inside each call.
     workers = min(3, len(batches))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_download_batch, batch): batch for batch in batches}
