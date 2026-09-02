@@ -13,6 +13,7 @@ import yfinance as yf
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
+DEFAULT_BATCH_SIZE = 100
 
 
 def get_nse_symbols() -> list[str]:
@@ -94,15 +95,42 @@ def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFr
 
 
 def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Retry missing symbols in small groups to recover partial Yahoo responses."""
+    """Retry missing symbols in small groups, then individually if needed."""
     recovered: dict[str, pd.DataFrame] = {}
-    for start in range(0, len(symbols), 10):
-        group = symbols[start:start + 10]
+    remaining = list(symbols)
+    for start in range(0, len(remaining), 10):
+        group = remaining[start:start + 10]
         data = _download_batch(group, retries=2)
         recovered.update(data)
-        if start + 10 < len(symbols):
+        if start + 10 < len(remaining):
             time.sleep(0.5)
+    remaining = [symbol for symbol in symbols if symbol not in recovered]
+    for symbol in remaining:
+        data = _download_batch([symbol], retries=2)
+        recovered.update(data)
+        if symbol not in recovered:
+            time.sleep(0.2)
     return recovered
+
+
+@lru_cache(maxsize=1)
+def _download_universe(symbols_key: tuple[str, ...], batch_size: int = DEFAULT_BATCH_SIZE) -> dict[str, pd.DataFrame]:
+    """Fetch and hold one stable stock-data snapshot for the current app process."""
+    symbols = list(symbols_key)
+    data: dict[str, pd.DataFrame] = {}
+    for start in range(0, len(symbols), batch_size):
+        batch = symbols[start:start + batch_size]
+        batch_data = _download_batch(batch)
+        missing = [symbol for symbol in batch if symbol not in batch_data]
+        if missing:
+            batch_data.update(_download_missing(missing))
+        data.update(batch_data)
+    return data
+
+
+def clear_stock_data_cache() -> None:
+    """Force the next stock scan to fetch a fresh market-data snapshot."""
+    _download_universe.cache_clear()
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
@@ -184,31 +212,25 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
     return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
-def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_minervini: bool = True, batch_size: int = 50, progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
-    batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
-    completed = 0
-    for batch in batches:
+def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None):
+    symbols = get_nse_symbols(); total = len(symbols)
+    data = _download_universe(tuple(symbols), batch_size=batch_size)
+    rows = []
+    for symbol, x in data.items():
         try:
-            data = _download_batch(batch)
+            m = _metrics(symbol, x, rising_days)
+            if m: rows.append(m)
         except Exception:
-            data = {}
-        missing_symbols = [symbol for symbol in batch if symbol not in data]
-        if missing_symbols:
-            data.update(_download_missing(missing_symbols))
-        successful += len(data)
-        for symbol, x in data.items():
-            try:
-                m = _metrics(symbol, x, rising_days)
-                if m: rows.append(m)
-            except Exception: continue
-        completed += len(batch)
-        if progress_callback: progress_callback(min(completed, total), total, "Downloading & calculating")
+            continue
+    if progress_callback: progress_callback(total, total, "Calculating")
     if not rows: raise RuntimeError("No usable stock data was returned.")
     df = pd.DataFrame(rows); ret_cols = ["3M %", "6M %", "9M %", "12M %"]; df = df.dropna(subset=ret_cols).copy()
     df["Raw RS Score"] = df["3M %"] * 0.40 + df["6M %"] * 0.20 + df["9M %"] * 0.20 + df["12M %"] * 0.20; df["RS Rating"] = _percentile_rating(df["Raw RS Score"])
-    df = df[(df["LTP"] >= min_price) & (df["History Days"] >= 252) & (df["RS Rating"] >= min_rs) & (df["From 52W High %"] <= near_high_pct)].copy()
-    if use_minervini: df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
+    if use_min_price: df = df[df["LTP"] >= min_price].copy()
+    if use_near_high: df = df[df["From 52W High %"] <= near_high_pct].copy()
+    if use_min_rs: df = df[df["RS Rating"] >= min_rs].copy()
+    if use_minervini: df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"])].copy()
+    if use_ma_rising: df = df[df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
     if not df.empty:
@@ -222,8 +244,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     else:
         df["Industry"] = pd.Series(dtype=str); df["Index"] = pd.Series(dtype=str)
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
-    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %", "History Days", "TradingView"]
+    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
-    usable = len(rows)
-    stats = {"universe": total, "coverage": (usable / total * 100) if total else 0, "downloaded": successful, "usable": usable, "missing": max(total - successful, 0)}
+    downloaded = len(data); usable = len(rows)
+    stats = {"universe": total, "coverage": (downloaded / total * 100) if total else 0, "downloaded": downloaded, "usable": usable, "missing": max(total - downloaded, 0), "batch_size": batch_size}
     return df, stats
