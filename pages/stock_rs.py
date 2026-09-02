@@ -51,15 +51,17 @@ with main:
         matches = len(df); near = int((df["From 52W High %"] <= 2).sum()) if matches else 0; strong = int((df["RS Rating"] >= 80).sum()) if matches else 0
         stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.0f}%</div></div><div class='rstat'><div class='rstat-label'>RS 80+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within 2% of high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Batch size</div><div class='rstat-value'>{int(st.session_state.get('stock_batch_size',50))}</div></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
-        search = st.text_input("Search stocks", placeholder="Search symbol or sector…", label_visibility="collapsed", key="stock_search")
+        search = st.text_input("Search stocks", placeholder="Search symbol, sector or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
         if search:
-            q = search.strip(); view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Sector"].str.contains(q, case=False, na=False)]
-        display_cols = ["Symbol", "Sector", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "TradingView"]
+            q = search.strip(); view = view[
+                view["Symbol"].str.contains(q, case=False, na=False)
+                | view["Sector"].str.contains(q, case=False, na=False)
+                | view["Industry"].str.contains(q, case=False, na=False)
+            ]
+        display_cols = ["Symbol", "Sector", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "TradingView"]
         shown = view[[c for c in display_cols if c in view.columns]].copy()
 
-        # Restore the normal/original table action size. The controls are rendered
-        # below the table, so they no longer consume space above the results.
         all_columns = list(shown.columns)
         saved_columns = st.session_state.get("stock_columns", all_columns)
         saved_columns = [c for c in saved_columns if c in all_columns]
@@ -75,13 +77,15 @@ with main:
             return styles
 
         st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={
-            "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Sector": st.column_config.TextColumn("SECTOR", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
+            "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"),
+            "Sector": st.column_config.TextColumn("SECTOR", width="medium"),
+            "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"),
+            "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
             "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"),
             "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("FROM HIGH", format="%.1f%%"), "50 DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"), "150 DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"), "200 DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
             "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
         })
 
-        # Original-size actions, now placed at the bottom-left of the table.
         eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
         with eye_action:
             with st.popover(":material/visibility:", use_container_width=True, help="Select columns"):
@@ -92,4 +96,4 @@ with main:
 
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>',unsafe_allow_html=True)
-        st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filter = price above 50 / 150 / 200 DMA with configurable rising-period checks. Sector is a best-effort Yahoo Finance classification.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filter = price above 50 / 150 / 200 DMA with configurable rising-period checks. Sector and Industry are informational metadata and are not used in scan calculations or filters.</div>', unsafe_allow_html=True)
