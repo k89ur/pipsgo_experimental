@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 from functools import lru_cache
 from typing import Callable, Optional
 
@@ -38,27 +39,70 @@ def get_nse_symbols() -> list[str]:
         raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
 
 
-def _download_batch(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Download one batch from Yahoo Finance."""
-    tickers = [f"{s}.NS" for s in symbols]
-    raw = yf.download(tickers=tickers, period="2y", interval="1d", auto_adjust=True, progress=False, group_by="ticker", threads=True)
+def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Extract usable per-symbol frames from a yfinance multi-ticker response."""
     result: dict[str, pd.DataFrame] = {}
     if raw is None or raw.empty:
         return result
     if isinstance(raw.columns, pd.MultiIndex):
-        level0 = set(raw.columns.get_level_values(0)); level1 = set(raw.columns.get_level_values(1))
+        level0 = set(raw.columns.get_level_values(0))
+        level1 = set(raw.columns.get_level_values(1))
         for s in symbols:
             t = f"{s}.NS"
             try:
-                if t in level0: x = raw[t].copy()
-                elif t in level1: x = raw.xs(t, axis=1, level=1).copy()
-                else: continue
-                if "Close" in x.columns and not x["Close"].dropna().empty: result[s] = x.dropna(subset=["Close"])
-            except Exception: continue
+                if t in level0:
+                    x = raw[t].copy()
+                elif t in level1:
+                    x = raw.xs(t, axis=1, level=1).copy()
+                else:
+                    continue
+                if "Close" in x.columns and not x["Close"].dropna().empty:
+                    result[s] = x.dropna(subset=["Close"])
+            except Exception:
+                continue
     else:
         s = symbols[0]
-        if "Close" in raw.columns: result[s] = raw.dropna(subset=["Close"])
+        if "Close" in raw.columns:
+            result[s] = raw.dropna(subset=["Close"])
     return result
+
+
+def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFrame]:
+    """Download one batch with retries and conservative yfinance threading."""
+    tickers = [f"{s}.NS" for s in symbols]
+    last_result: dict[str, pd.DataFrame] = {}
+    for attempt in range(retries):
+        try:
+            raw = yf.download(
+                tickers=tickers,
+                period="2y",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            )
+            result = _extract_downloaded(raw, symbols)
+            if len(result) == len(symbols):
+                return result
+            last_result = result
+        except Exception:
+            pass
+        if attempt < retries - 1:
+            time.sleep(1.5 * (attempt + 1))
+    return last_result
+
+
+def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Retry missing symbols in small groups to recover partial Yahoo responses."""
+    recovered: dict[str, pd.DataFrame] = {}
+    for start in range(0, len(symbols), 10):
+        group = symbols[start:start + 10]
+        data = _download_batch(group, retries=2)
+        recovered.update(data)
+        if start + 10 < len(symbols):
+            time.sleep(0.5)
+    return recovered
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
@@ -145,8 +189,13 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
     completed = 0
     for batch in batches:
-        try: data = _download_batch(batch)
-        except Exception: data = {}
+        try:
+            data = _download_batch(batch)
+        except Exception:
+            data = {}
+        missing_symbols = [symbol for symbol in batch if symbol not in data]
+        if missing_symbols:
+            data.update(_download_missing(missing_symbols))
         successful += len(data)
         for symbol, x in data.items():
             try:
@@ -175,5 +224,6 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
     columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
-    stats = {"universe": total, "coverage": (successful / total * 100) if total else 0}
+    usable = len(rows)
+    stats = {"universe": total, "coverage": (usable / total * 100) if total else 0, "downloaded": successful, "usable": usable, "missing": max(total - successful, 0)}
     return df, stats
