@@ -14,6 +14,7 @@ NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
+MIN_COVERAGE_PCT = 99.0
 
 
 def get_nse_symbols() -> list[str]:
@@ -46,25 +47,18 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
     if raw is None or raw.empty:
         return result
     if isinstance(raw.columns, pd.MultiIndex):
-        level0 = set(raw.columns.get_level_values(0))
-        level1 = set(raw.columns.get_level_values(1))
+        level0 = set(raw.columns.get_level_values(0)); level1 = set(raw.columns.get_level_values(1))
         for s in symbols:
             t = f"{s}.NS"
             try:
-                if t in level0:
-                    x = raw[t].copy()
-                elif t in level1:
-                    x = raw.xs(t, axis=1, level=1).copy()
-                else:
-                    continue
-                if "Close" in x.columns and not x["Close"].dropna().empty:
-                    result[s] = x.dropna(subset=["Close"])
-            except Exception:
-                continue
+                if t in level0: x = raw[t].copy()
+                elif t in level1: x = raw.xs(t, axis=1, level=1).copy()
+                else: continue
+                if "Close" in x.columns and not x["Close"].dropna().empty: result[s] = x.dropna(subset=["Close"])
+            except Exception: continue
     else:
         s = symbols[0]
-        if "Close" in raw.columns:
-            result[s] = raw.dropna(subset=["Close"])
+        if "Close" in raw.columns: result[s] = raw.dropna(subset=["Close"])
     return result
 
 
@@ -74,63 +68,42 @@ def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFr
     last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
-            raw = yf.download(
-                tickers=tickers,
-                period="2y",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                group_by="ticker",
-                threads=False,
-            )
+            raw = yf.download(tickers=tickers, period="2y", interval="1d", auto_adjust=True, progress=False, group_by="ticker", threads=False)
             result = _extract_downloaded(raw, symbols)
-            if len(result) == len(symbols):
-                return result
+            if len(result) == len(symbols): return result
             last_result = result
         except Exception:
             pass
-        if attempt < retries - 1:
-            time.sleep(1.5 * (attempt + 1))
+        if attempt < retries - 1: time.sleep(1.5 * (attempt + 1))
     return last_result
 
 
 def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
     """Retry missing symbols in small groups, then individually if needed."""
     recovered: dict[str, pd.DataFrame] = {}
-    remaining = list(symbols)
-    for start in range(0, len(remaining), 10):
-        group = remaining[start:start + 10]
-        data = _download_batch(group, retries=2)
-        recovered.update(data)
-        if start + 10 < len(remaining):
-            time.sleep(0.5)
+    for start in range(0, len(symbols), 10):
+        group = symbols[start:start + 10]
+        recovered.update(_download_batch(group, retries=2))
+        if start + 10 < len(symbols): time.sleep(0.5)
     remaining = [symbol for symbol in symbols if symbol not in recovered]
     for symbol in remaining:
-        data = _download_batch([symbol], retries=2)
-        recovered.update(data)
-        if symbol not in recovered:
-            time.sleep(0.2)
+        recovered.update(_download_batch([symbol], retries=2))
+        if symbol not in recovered: time.sleep(0.2)
     return recovered
 
 
-@lru_cache(maxsize=1)
-def _download_universe(symbols_key: tuple[str, ...], batch_size: int = DEFAULT_BATCH_SIZE) -> dict[str, pd.DataFrame]:
-    """Fetch and hold one stable stock-data snapshot for the current app process."""
-    symbols = list(symbols_key)
+def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
+    """Fetch one complete market-data snapshot for a single scan run."""
     data: dict[str, pd.DataFrame] = {}
-    for start in range(0, len(symbols), batch_size):
+    total = len(symbols)
+    for start in range(0, total, batch_size):
         batch = symbols[start:start + batch_size]
         batch_data = _download_batch(batch)
         missing = [symbol for symbol in batch if symbol not in batch_data]
-        if missing:
-            batch_data.update(_download_missing(missing))
+        if missing: batch_data.update(_download_missing(missing))
         data.update(batch_data)
+        if progress_callback: progress_callback(min(start + len(batch), total), total, "Downloading")
     return data
-
-
-def clear_stock_data_cache() -> None:
-    """Force the next stock scan to fetch a fresh market-data snapshot."""
-    _download_universe.cache_clear()
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
@@ -173,56 +146,41 @@ def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
 
 def _load_stock_indices() -> dict[str, tuple[str, str, str, str, str]]:
     """Load external stock -> index 1-5 memberships from the public Drive CSV."""
-    urls = [
-        STOCK_INDEX_URL,
-        "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro",
-        "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t",
-    ]
+    urls = [STOCK_INDEX_URL, "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro", "https://drive.usercontent.google.com/download?id=19auf-ZldcujlMEiznNUMYTFBiokST2ro&export=download&confirm=t"]
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,application/octet-stream,*/*"}
     for url in urls:
         try:
-            r = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
-            r.raise_for_status()
-            content = r.content
-            if not content:
-                continue
-            metadata = pd.read_csv(io.BytesIO(content))
-            normalized = {str(c).replace("\ufeff", "").strip().upper(): c for c in metadata.columns}
-            symbol_col = normalized.get("SYMBOL")
-            index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
-            if not symbol_col or any(c is None for c in index_cols):
-                continue
-            metadata = metadata[[symbol_col, *index_cols]].copy()
-            metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
-            metadata["Symbol"] = metadata["Symbol"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper()
-            metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
-            for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]:
-                metadata[col] = metadata[col].fillna("").astype(str).str.strip()
-                metadata[col] = metadata[col].replace("", "Not Available")
+            r = requests.get(url, headers=headers, timeout=30, allow_redirects=True); r.raise_for_status(); content = r.content
+            if not content: continue
+            metadata = pd.read_csv(io.BytesIO(content)); normalized = {str(c).replace("\ufeff", "").strip().upper(): c for c in metadata.columns}
+            symbol_col = normalized.get("SYMBOL"); index_cols = [normalized.get(f"INDEX {i}") for i in range(1, 6)]
+            if not symbol_col or any(c is None for c in index_cols): continue
+            metadata = metadata[[symbol_col, *index_cols]].copy(); metadata.columns = ["Symbol", "Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]
+            metadata["Symbol"] = metadata["Symbol"].astype(str).str.replace("\ufeff", "", regex=False).str.strip().str.upper(); metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
+            for col in ["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]: metadata[col] = metadata[col].fillna("").astype(str).str.strip().replace("", "Not Available")
             return {row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in metadata.itertuples(index=False, name=None)}
-        except Exception:
-            continue
+        except Exception: continue
     return {}
 
 
 def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, str, str]]:
-    """Resolve five index membership fields; unknown symbols remain Not Available."""
-    metadata = _load_stock_indices()
-    missing = ("Not Available",) * 5
+    metadata = _load_stock_indices(); missing = ("Not Available",) * 5
     return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None):
     symbols = get_nse_symbols(); total = len(symbols)
-    data = _download_universe(tuple(symbols), batch_size=batch_size)
+    data = _download_universe(symbols, batch_size=batch_size, progress_callback=progress_callback)
+    downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
+    if coverage < MIN_COVERAGE_PCT:
+        missing = total - downloaded
+        raise RuntimeError(f"Yahoo Finance data coverage is only {coverage:.1f}% ({downloaded:,}/{total:,}). {missing:,} symbols are missing after recovery. Scan stopped to avoid an unreliable RS ranking. Please retry shortly.")
     rows = []
     for symbol, x in data.items():
         try:
             m = _metrics(symbol, x, rising_days)
             if m: rows.append(m)
-        except Exception:
-            continue
-    if progress_callback: progress_callback(total, total, "Calculating")
+        except Exception: continue
     if not rows: raise RuntimeError("No usable stock data was returned.")
     df = pd.DataFrame(rows); ret_cols = ["3M %", "6M %", "9M %", "12M %"]; df = df.dropna(subset=ret_cols).copy()
     df["Raw RS Score"] = df["3M %"] * 0.40 + df["6M %"] * 0.20 + df["9M %"] * 0.20 + df["12M %"] * 0.20; df["RS Rating"] = _percentile_rating(df["Raw RS Score"])
@@ -232,10 +190,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_minervini: df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"])].copy()
     if use_ma_rising: df = df[df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
-
     if not df.empty:
-        industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
-        index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist())
+        industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist()); index_metadata = _stock_index_results(df["Symbol"].astype(str).tolist())
         df["Industry"] = [industry_metadata.get(s, ("Not Available", "Not Available"))[1] for s in df["Symbol"].astype(str)]
         index_values = [index_metadata.get(s, ("Not Available",) * 5) for s in df["Symbol"].astype(str)]
         for i, col in enumerate(["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]): df[col] = [values[i] for values in index_values]
@@ -246,6 +202,5 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
     columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]
     df = df[columns]
-    downloaded = len(data); usable = len(rows)
-    stats = {"universe": total, "coverage": (downloaded / total * 100) if total else 0, "downloaded": downloaded, "usable": usable, "missing": max(total - downloaded, 0), "batch_size": batch_size}
+    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size}
     return df, stats
