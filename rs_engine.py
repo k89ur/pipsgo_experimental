@@ -4,6 +4,7 @@ import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Callable, Optional
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,7 @@ import requests
 import yfinance as yf
 
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+NSE_HOME = "https://www.nseindia.com"
 
 
 def get_nse_symbols() -> list[str]:
@@ -108,9 +110,44 @@ def _percentile_rating(scores: pd.Series) -> pd.Series:
     return pct.round().clip(1, 99).astype(int)
 
 
-@lru_cache(maxsize=1024)
+_NSE_SESSION = requests.Session()
+_NSE_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": NSE_HOME + "/",
+})
+_NSE_SESSION_READY = False
+
+
+def _nse_quote(symbol: str) -> dict:
+    """Get one NSE quote JSON response using a browser-like session."""
+    global _NSE_SESSION_READY
+    if not _NSE_SESSION_READY:
+        try:
+            _NSE_SESSION.get(NSE_HOME, timeout=10)
+        except Exception:
+            pass
+        _NSE_SESSION_READY = True
+    url = f"{NSE_HOME}/api/quote-equity?symbol={quote(symbol, safe='')}"
+    response = _NSE_SESSION.get(url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict) or "industryInfo" not in data:
+        raise ValueError("NSE quote response has no industryInfo")
+    return data
+
+
+@lru_cache(maxsize=2048)
 def _sector_for_symbol(symbol: str) -> str:
-    """Best-effort Yahoo sector lookup for the final result set."""
+    """Primary sector source: official NSE industry classification; Yahoo is fallback."""
+    try:
+        info = _nse_quote(symbol).get("industryInfo") or {}
+        sector = info.get("sector") or info.get("industry") or info.get("basicIndustry")
+        if sector:
+            return str(sector)
+    except Exception:
+        pass
     try:
         info = yf.Ticker(f"{symbol}.NS").info
         return str(info.get("sector") or info.get("industry") or "—")
@@ -119,7 +156,7 @@ def _sector_for_symbol(symbol: str) -> str:
 
 
 def _sector_results(symbols: list[str]) -> dict[str, str]:
-    """Resolve sectors conservatively to avoid Yahoo metadata throttling."""
+    """Resolve sectors sequentially to avoid NSE/Yahoo metadata throttling."""
     result: dict[str, str] = {}
     for symbol in symbols:
         try:
@@ -132,7 +169,10 @@ def _sector_results(symbols: list[str]) -> dict[str, str]:
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20,
              use_minervini: bool = True, batch_size: int = 50,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    """Run the stock scan with original calculations and filters."""
+    """Run the stock scan with original calculations and filters.
+
+    Sector classification is metadata only and does not influence RS or filters.
+    """
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
 
