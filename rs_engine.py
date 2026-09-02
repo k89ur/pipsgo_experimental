@@ -119,19 +119,13 @@ def _sector_for_symbol(symbol: str) -> str:
 
 
 def _sector_results(symbols: list[str]) -> dict[str, str]:
-    """Resolve sectors concurrently; calculations do not depend on this data."""
-    if not symbols:
-        return {}
-    workers = min(8, len(symbols))
+    """Resolve sectors conservatively to avoid Yahoo metadata throttling."""
     result: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_sector_for_symbol, symbol): symbol for symbol in symbols}
-        for future in as_completed(futures):
-            symbol = futures[future]
-            try:
-                result[symbol] = future.result()
-            except Exception:
-                result[symbol] = "—"
+    for symbol in symbols:
+        try:
+            result[symbol] = _sector_for_symbol(symbol)
+        except Exception:
+            result[symbol] = "—"
     return result
 
 
@@ -140,9 +134,10 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
              progress_callback: Optional[Callable[[int, int, str], None]] = None):
     """Run the stock scan with original calculations and filters.
 
-    Speed improvements are restricted to parallel network work and concurrent
-    sector enrichment. Every scan downloads fresh market data, so Refresh/Run
-    always reflects the current Yahoo Finance response.
+    Speed improvements are restricted to parallel price-data downloads. Sector
+    metadata is intentionally resolved conservatively because Yahoo metadata
+    endpoints can throttle concurrent requests. Sector values never influence
+    RS or any scan filter.
     """
     symbols = get_nse_symbols(); total = len(symbols); rows = []; successful = 0
     batches = [symbols[start:start + batch_size] for start in range(0, total, batch_size)]
@@ -183,8 +178,6 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"]) & df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
 
-    # Sector enrichment remains after all filters. Only lookup scheduling
-    # changed; sector values never influence RS or any scan filter.
     if not df.empty:
         sectors = _sector_results(df["Symbol"].astype(str).tolist())
         df["Sector"] = [sectors.get(s, "—") for s in df["Symbol"].astype(str)]
