@@ -47,16 +47,9 @@ with main:
                 progress.progress(pct, text=f"{message} · {done:,}/{total:,}")
                 stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Progress</div><div class='rstat-value'>{pct*100:.0f}%</div></div><div class='rstat'><div class='rstat-label'>Processed</div><div class='rstat-value'>{done:,} / {total:,}</div></div>", unsafe_allow_html=True)
             result, stats = run_scan(
-                min_rs=min_rs,
-                near_high_pct=near_high,
-                min_price=min_price,
-                rising_days=rising_days,
-                use_min_rs=use_min_rs,
-                use_near_high=use_near_high,
-                use_min_price=use_min_price,
-                use_ma_rising=use_ma_rising,
-                use_minervini=use_minervini,
-                batch_size=DEFAULT_BATCH_SIZE,
+                min_rs=min_rs, near_high_pct=near_high, min_price=min_price, rising_days=rising_days,
+                use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price,
+                use_ma_rising=use_ma_rising, use_minervini=use_minervini, batch_size=DEFAULT_BATCH_SIZE,
                 progress_callback=stock_update,
             )
             st.session_state.stock_result = result; st.session_state.stock_stats = stats
@@ -71,18 +64,16 @@ with main:
         st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">The scanner will evaluate the NSE universe using your selected RS, 52-week and technical filters.</div></div>', unsafe_allow_html=True)
     else:
         stats = st.session_state.get("stock_stats", {})
-        matches = len(df); near = int((df["From 52W High %"] <= 2).sum()) if matches else 0; strong = int((df["RS Rating"] >= 80).sum()) if matches else 0
-        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS 80+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within 2% of 52W high</div><div class='rstat-value'>{near:,}</div></div>", unsafe_allow_html=True)
+        matches = len(df); near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0; strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
+        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
         if search:
             q = search.strip(); view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
         display_cols = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "TradingView"]
-        shown = view[[c for c in display_cols if c in view.columns]].copy()
-        shown.insert(0, "S.No", range(1, len(shown) + 1))
-        all_columns = list(shown.columns); saved_columns = st.session_state.get("stock_columns", all_columns); saved_columns = [c for c in saved_columns if c in all_columns]
-        if not saved_columns: saved_columns = all_columns
+        shown = view[[c for c in display_cols if c in view.columns]].copy(); shown.insert(0, "S.No", range(1, len(shown) + 1))
+        all_columns = list(shown.columns); saved_columns = st.session_state.get("stock_columns", all_columns); saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
         shown_for_table = shown[saved_columns]
         def stock_style(row):
             styles = [""] * len(row)
