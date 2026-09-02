@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import time
-from functools import lru_cache
 from typing import Callable, Optional
 
 import numpy as np
@@ -14,10 +13,10 @@ NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
+_STOCK_DATA_CACHE: dict[tuple[tuple[str, ...], int], dict[str, pd.DataFrame]] = {}
 
 
 def get_nse_symbols() -> list[str]:
-    """Get the current NSE equity universe. Falls back to bundled symbols.csv."""
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
     try:
         r = requests.get(NSE_URL, headers=headers, timeout=20); r.raise_for_status()
@@ -33,7 +32,6 @@ def get_nse_symbols() -> list[str]:
 
 
 def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Extract usable per-symbol frames from a yfinance multi-ticker response."""
     result: dict[str, pd.DataFrame] = {}
     if raw is None or raw.empty: return result
     if isinstance(raw.columns, pd.MultiIndex):
@@ -53,7 +51,6 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
 
 
 def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFrame]:
-    """Download a batch with bounded retries."""
     tickers = [f"{s}.NS" for s in symbols]; last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
@@ -67,7 +64,6 @@ def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFr
 
 
 def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Recover missing symbols in small groups, with an individual fallback."""
     recovered: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 10):
         group = symbols[start:start + 10]; recovered.update(_download_batch(group, retries=2))
@@ -77,25 +73,30 @@ def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return recovered
 
 
-@lru_cache(maxsize=1)
-def _download_universe_cached(symbols_key: tuple[str, ...], batch_size: int = DEFAULT_BATCH_SIZE) -> dict[str, pd.DataFrame]:
-    """Download one stable market-data snapshot and reuse it for later scans."""
-    symbols = list(symbols_key); data: dict[str, pd.DataFrame] = {}
-    for start in range(0, len(symbols), batch_size):
-        batch = symbols[start:start + batch_size]; batch_data = _download_batch(batch); missing = [symbol for symbol in batch if symbol not in batch_data]
+def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
+    """Download once per process/cache key while reporting progress for each batch."""
+    key = (tuple(symbols), batch_size)
+    if key in _STOCK_DATA_CACHE:
+        if progress_callback: progress_callback(len(symbols), len(symbols), "Market data ready (cached)")
+        return _STOCK_DATA_CACHE[key]
+
+    total = len(symbols); data: dict[str, pd.DataFrame] = {}
+    for start in range(0, total, batch_size):
+        batch = symbols[start:start + batch_size]
+        batch_data = _download_batch(batch)
+        missing = [symbol for symbol in batch if symbol not in batch_data]
         if missing: batch_data.update(_download_missing(missing))
         data.update(batch_data)
+        done = min(start + len(batch), total)
+        if progress_callback:
+            progress_callback(done, total, f"Downloading market data · {len(data):,} received")
+    _STOCK_DATA_CACHE[key] = data
+    if progress_callback: progress_callback(total, total, "Market data ready")
     return data
 
 
 def clear_stock_data_cache() -> None:
-    _download_universe_cached.cache_clear()
-
-
-def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
-    data = _download_universe_cached(tuple(symbols), batch_size)
-    if progress_callback: progress_callback(len(symbols), len(symbols), "Market data ready")
-    return data
+    _STOCK_DATA_CACHE.clear()
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
@@ -118,6 +119,8 @@ def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising
 def _percentile_rating(scores: pd.Series) -> pd.Series:
     pct = scores.rank(method="average", pct=True) * 99; return pct.round().clip(1, 99).astype(int)
 
+
+from functools import lru_cache
 
 @lru_cache(maxsize=1)
 def _load_sector_industry() -> dict[str, tuple[str, str]]:
