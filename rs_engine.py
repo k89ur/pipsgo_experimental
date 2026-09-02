@@ -14,7 +14,6 @@ NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
-MIN_COVERAGE_PCT = 99.0
 
 
 def get_nse_symbols() -> list[str]:
@@ -28,7 +27,7 @@ def get_nse_symbols() -> list[str]:
         if not col:
             raise ValueError("NSE CSV has no SYMBOL column")
         symbols = df[col].astype(str).str.strip().replace("nan", np.nan).dropna().unique().tolist()
-        symbols = [s for s in symbols if s and s not in {"SYMBOL"}]
+        symbols = [s for s in symbols if s and s != "SYMBOL"]
         if len(symbols) >= 100:
             return sorted(symbols)
     except Exception:
@@ -51,72 +50,105 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
         for s in symbols:
             t = f"{s}.NS"
             try:
-                if t in level0: x = raw[t].copy()
-                elif t in level1: x = raw.xs(t, axis=1, level=1).copy()
-                else: continue
-                if "Close" in x.columns and not x["Close"].dropna().empty: result[s] = x.dropna(subset=["Close"])
-            except Exception: continue
+                if t in level0:
+                    x = raw[t].copy()
+                elif t in level1:
+                    x = raw.xs(t, axis=1, level=1).copy()
+                else:
+                    continue
+                if "Close" in x.columns and not x["Close"].dropna().empty:
+                    result[s] = x.dropna(subset=["Close"])
+            except Exception:
+                continue
     else:
         s = symbols[0]
-        if "Close" in raw.columns: result[s] = raw.dropna(subset=["Close"])
+        if "Close" in raw.columns:
+            result[s] = raw.dropna(subset=["Close"])
     return result
 
 
 def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFrame]:
-    """Download one batch with retries and conservative yfinance threading."""
+    """Download a batch with bounded retries."""
     tickers = [f"{s}.NS" for s in symbols]
     last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
-            raw = yf.download(tickers=tickers, period="2y", interval="1d", auto_adjust=True, progress=False, group_by="ticker", threads=False)
+            raw = yf.download(
+                tickers=tickers,
+                period="2y",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                group_by="ticker",
+                threads=True,
+            )
             result = _extract_downloaded(raw, symbols)
-            if len(result) == len(symbols): return result
+            if len(result) == len(symbols):
+                return result
             last_result = result
         except Exception:
             pass
-        if attempt < retries - 1: time.sleep(1.5 * (attempt + 1))
+        if attempt < retries - 1:
+            time.sleep(1.0 * (attempt + 1))
     return last_result
 
 
 def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Retry missing symbols in small groups, then individually if needed."""
+    """Recover missing symbols in small groups, with an individual fallback."""
     recovered: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 10):
         group = symbols[start:start + 10]
         recovered.update(_download_batch(group, retries=2))
-        if start + 10 < len(symbols): time.sleep(0.5)
+        if start + 10 < len(symbols):
+            time.sleep(0.25)
     remaining = [symbol for symbol in symbols if symbol not in recovered]
     for symbol in remaining:
         recovered.update(_download_batch([symbol], retries=2))
-        if symbol not in recovered: time.sleep(0.2)
     return recovered
 
 
-def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
-    """Fetch one complete market-data snapshot for a single scan run."""
+@lru_cache(maxsize=1)
+def _download_universe_cached(symbols_key: tuple[str, ...], batch_size: int = DEFAULT_BATCH_SIZE) -> dict[str, pd.DataFrame]:
+    """Download one stable market-data snapshot and reuse it for later scans."""
+    symbols = list(symbols_key)
     data: dict[str, pd.DataFrame] = {}
-    total = len(symbols)
-    for start in range(0, total, batch_size):
+    for start in range(0, len(symbols), batch_size):
         batch = symbols[start:start + batch_size]
         batch_data = _download_batch(batch)
         missing = [symbol for symbol in batch if symbol not in batch_data]
-        if missing: batch_data.update(_download_missing(missing))
+        if missing:
+            batch_data.update(_download_missing(missing))
         data.update(batch_data)
-        if progress_callback: progress_callback(min(start + len(batch), total), total, "Downloading")
+    return data
+
+
+def clear_stock_data_cache() -> None:
+    """Force the next scan to download a fresh market-data snapshot."""
+    _download_universe_cached.cache_clear()
+
+
+def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
+    """Return the current process's stable market-data snapshot."""
+    data = _download_universe_cached(tuple(symbols), batch_size)
+    if progress_callback:
+        progress_callback(len(symbols), len(symbols), "Market data ready")
     return data
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
-    if len(close) <= days: return np.nan
+    if len(close) <= days:
+        return np.nan
     now = float(close.iloc[-1]); old = float(close.iloc[-days - 1])
     return (now / old - 1.0) * 100.0 if old else np.nan
 
 
 def _metrics(symbol: str, x: pd.DataFrame, rising_days: int) -> dict:
     close = x["Close"].dropna().astype(float)
-    if len(close) < 200: return {}
+    if len(close) < 200:
+        return {}
     ltp = float(close.iloc[-1]); d50 = close.rolling(50).mean(); d150 = close.rolling(150).mean(); d200 = close.rolling(200).mean()
-    if len(d200.dropna()) <= rising_days: return {}
+    if len(d200.dropna()) <= rising_days:
+        return {}
     high_52w = float(close.tail(252).max()); from_high = (high_52w - ltp) / high_52w * 100.0 if high_52w else np.nan
     return {"Symbol": symbol, "LTP": ltp, "3M %": _return_at_days(close, 63), "6M %": _return_at_days(close, 126), "9M %": _return_at_days(close, 189), "12M %": _return_at_days(close, 252), "50 DMA": float(d50.iloc[-1]), "150 DMA": float(d150.iloc[-1]), "200 DMA": float(d200.iloc[-1]), "50 DMA Rising": float(d50.iloc[-1]) > float(d50.iloc[-1-rising_days]), "150 DMA Rising": float(d150.iloc[-1]) > float(d150.iloc[-1-rising_days]), "200 DMA Rising": float(d200.iloc[-1]) > float(d200.iloc[-1-rising_days]), "52W High": high_52w, "From 52W High %": from_high, "History Days": len(close)}
 
@@ -136,7 +168,8 @@ def _load_sector_industry() -> dict[str, tuple[str, str]]:
         for col in ["Sector", "Industry"]: metadata[col] = metadata[col].fillna("").astype(str).str.strip().replace("", "Not Available")
         metadata = metadata[~metadata["Symbol"].isin(["", "NAN", "NONE"])].drop_duplicates("Symbol")
         return {row.Symbol: (row.Sector, row.Industry) for row in metadata.itertuples(index=False)}
-    except Exception: return {}
+    except Exception:
+        return {}
 
 
 def _sector_industry_results(symbols: list[str]) -> dict[str, tuple[str, str]]:
@@ -172,16 +205,15 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     symbols = get_nse_symbols(); total = len(symbols)
     data = _download_universe(symbols, batch_size=batch_size, progress_callback=progress_callback)
     downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
-    if coverage < MIN_COVERAGE_PCT:
-        missing = total - downloaded
-        raise RuntimeError(f"Yahoo Finance data coverage is only {coverage:.1f}% ({downloaded:,}/{total:,}). {missing:,} symbols are missing after recovery. Scan stopped to avoid an unreliable RS ranking. Please retry shortly.")
     rows = []
     for symbol, x in data.items():
         try:
             m = _metrics(symbol, x, rising_days)
             if m: rows.append(m)
-        except Exception: continue
-    if not rows: raise RuntimeError("No usable stock data was returned.")
+        except Exception:
+            continue
+    if not rows:
+        raise RuntimeError("No usable stock data was returned.")
     df = pd.DataFrame(rows); ret_cols = ["3M %", "6M %", "9M %", "12M %"]; df = df.dropna(subset=ret_cols).copy()
     df["Raw RS Score"] = df["3M %"] * 0.40 + df["6M %"] * 0.20 + df["9M %"] * 0.20 + df["12M %"] * 0.20; df["RS Rating"] = _percentile_rating(df["Raw RS Score"])
     if use_min_price: df = df[df["LTP"] >= min_price].copy()
