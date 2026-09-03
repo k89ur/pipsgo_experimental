@@ -115,7 +115,7 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
     return result
 
 
-def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFrame]:
+def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True) -> dict[str, pd.DataFrame]:
     tickers = [f"{s}.NS" for s in symbols]
     last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
@@ -127,7 +127,7 @@ def _download_batch(symbols: list[str], retries: int = 3) -> dict[str, pd.DataFr
                 auto_adjust=True,
                 progress=False,
                 group_by="ticker",
-                threads=True,
+                threads=threads,
             )
             result = _extract_downloaded(raw, symbols)
             if len(result) == len(symbols):
@@ -144,24 +144,30 @@ def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
     recovered: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 10):
         group = symbols[start:start + 10]
-        recovered.update(_download_batch(group, retries=2))
+        recovered.update(_download_batch(group, retries=2, threads=False))
         if start + 10 < len(symbols):
             time.sleep(0.25)
     remaining = [symbol for symbol in symbols if symbol not in recovered]
     for symbol in remaining:
-        recovered.update(_download_batch([symbol], retries=2))
+        recovered.update(_download_batch([symbol], retries=2, threads=False))
     return recovered
+
+
+def _latest_date(frame: pd.DataFrame) -> Optional[str]:
+    if frame is None or frame.empty:
+        return None
+    try:
+        return pd.Timestamp(frame.index[-1]).date().isoformat()
+    except Exception:
+        return None
 
 
 def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
     latest_by_symbol: dict[str, str] = {}
     for symbol, frame in data.items():
-        if frame is None or frame.empty:
-            continue
-        try:
-            latest_by_symbol[symbol] = pd.Timestamp(frame.index[-1]).date().isoformat()
-        except Exception:
-            continue
+        latest = _latest_date(frame)
+        if latest:
+            latest_by_symbol[symbol] = latest
 
     dates = list(latest_by_symbol.values())
     if not dates:
@@ -223,6 +229,35 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         if progress_callback:
             progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
 
+    # A bulk Yahoo download can return a complete-looking universe whose latest
+    # bar is one trading day behind. Recover stale symbols before calculating RS.
+    initial_dates = [_latest_date(frame) for frame in data.values()]
+    initial_dates = [date for date in initial_dates if date]
+    target_date = max(initial_dates) if initial_dates else None
+    stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
+    if stale_symbols:
+        if progress_callback:
+            progress_callback(0, len(stale_symbols), f"Recovering {len(stale_symbols):,} stale symbols for {target_date}")
+        for start in range(0, len(stale_symbols), 10):
+            group = stale_symbols[start:start + 10]
+            recovered = _download_batch(group, retries=2, threads=False)
+            for symbol, frame in recovered.items():
+                recovered_date = _latest_date(frame)
+                if recovered_date == target_date:
+                    data[symbol] = frame
+            done = min(start + len(group), len(stale_symbols))
+            if progress_callback:
+                progress_callback(done, len(stale_symbols), f"Stale-data recovery · {done:,}/{len(stale_symbols):,}")
+            if start + 10 < len(stale_symbols):
+                time.sleep(0.25)
+
+        still_stale = [symbol for symbol in stale_symbols if target_date and _latest_date(data.get(symbol)) < target_date]
+        for symbol in still_stale:
+            recovered = _download_batch([symbol], retries=1, threads=False)
+            frame = recovered.get(symbol)
+            if frame is not None and _latest_date(frame) == target_date:
+                data[symbol] = frame
+
     usable = [
         symbol
         for symbol, frame in data.items()
@@ -233,8 +268,10 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     ]
     usable_set = set(usable)
     missing = sorted(set(symbols) - set(data))
-    short_history = sorted(set(data) - usable_set)
     date_diagnostics = _snapshot_date_diagnostics(data)
+    stale_final = set(date_diagnostics["stale_data_symbols"])
+    short_history = sorted((set(data) - usable_set) | stale_final)
+    usable = [symbol for symbol in usable if symbol not in stale_final]
     snapshot = {
         "data": data,
         "downloaded_at": datetime.now(IST).isoformat(timespec="seconds"),
@@ -382,9 +419,12 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback)
     data = snapshot["data"]
     downloaded = snapshot["downloaded"]
+    stale_set = set(snapshot["stale_data_symbols"])
     coverage = snapshot["usable_coverage"]
     rows = []
     for symbol, x in data.items():
+        if symbol in stale_set:
+            continue
         try:
             m = _metrics(symbol, x, rising_days, calculate_ma_rising=use_ma_rising)
             if m:
