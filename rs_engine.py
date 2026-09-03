@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 import time
+from datetime import datetime
+from functools import lru_cache
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -13,7 +16,8 @@ NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
-_STOCK_DATA_CACHE: dict[tuple[tuple[str, ...], int], dict[str, pd.DataFrame]] = {}
+IST = ZoneInfo("Asia/Kolkata")
+_STOCK_DATA_CACHE: dict[tuple[str, str, tuple[str, ...], int], dict] = {}
 
 
 def get_nse_symbols() -> list[str]:
@@ -73,26 +77,50 @@ def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return recovered
 
 
-def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict[str, pd.DataFrame]:
-    """Download once per process/cache key while reporting progress for each batch."""
-    key = (tuple(symbols), batch_size)
-    if key in _STOCK_DATA_CACHE:
-        if progress_callback: progress_callback(len(symbols), len(symbols), "Market data ready (cached)")
-        return _STOCK_DATA_CACHE[key]
+def _snapshot_data_date(data: dict[str, pd.DataFrame]) -> str:
+    dates = []
+    for frame in data.values():
+        if frame is not None and not frame.empty:
+            try: dates.append(pd.Timestamp(frame.index[-1]).date())
+            except Exception: pass
+    return max(dates).isoformat() if dates else "Unknown"
+
+
+def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict:
+    """Download one market-data snapshot per mode and IST calendar day."""
+    mode = str(snapshot_mode).lower().strip()
+    if mode not in {"intraday", "eod"}: mode = "eod"
+    snapshot_day = datetime.now(IST).date().isoformat()
+    key = (mode, snapshot_day, tuple(symbols), batch_size)
+    if not force_refresh and key in _STOCK_DATA_CACHE:
+        cached = _STOCK_DATA_CACHE[key]
+        if progress_callback: progress_callback(len(symbols), len(symbols), f"{mode.upper()} snapshot ready (cached)")
+        return cached
 
     total = len(symbols); data: dict[str, pd.DataFrame] = {}
-    for start in range(0, total, batch_size):
+    batch_count = (total + batch_size - 1) // batch_size
+    for batch_no, start in enumerate(range(0, total, batch_size), start=1):
         batch = symbols[start:start + batch_size]
+        if progress_callback:
+            progress_callback(start, total, f"Downloading {mode.upper()} data · batch {batch_no}/{batch_count}")
         batch_data = _download_batch(batch)
         missing = [symbol for symbol in batch if symbol not in batch_data]
         if missing: batch_data.update(_download_missing(missing))
         data.update(batch_data)
         done = min(start + len(batch), total)
         if progress_callback:
-            progress_callback(done, total, f"Downloading market data · {len(data):,} received")
-    _STOCK_DATA_CACHE[key] = data
-    if progress_callback: progress_callback(total, total, "Market data ready")
-    return data
+            progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
+
+    snapshot = {
+        "data": data,
+        "downloaded_at": datetime.now(IST).isoformat(timespec="seconds"),
+        "mode": mode,
+        "snapshot_day": snapshot_day,
+        "data_date": _snapshot_data_date(data),
+    }
+    _STOCK_DATA_CACHE[key] = snapshot
+    if progress_callback: progress_callback(total, total, f"{mode.upper()} snapshot ready")
+    return snapshot
 
 
 def clear_stock_data_cache() -> None:
@@ -119,8 +147,6 @@ def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising
 def _percentile_rating(scores: pd.Series) -> pd.Series:
     pct = scores.rank(method="average", pct=True) * 99; return pct.round().clip(1, 99).astype(int)
 
-
-from functools import lru_cache
 
 @lru_cache(maxsize=1)
 def _load_sector_industry() -> dict[str, tuple[str, str]]:
@@ -157,8 +183,8 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
     metadata = _load_stock_indices(); missing = ("Not Available",) * 5; return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
-def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    symbols = get_nse_symbols(); total = len(symbols); data = _download_universe(symbols, batch_size=batch_size, progress_callback=progress_callback); downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
+def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
+    symbols = get_nse_symbols(); total = len(symbols); snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback); data = snapshot["data"]; downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
     rows = []
     for symbol, x in data.items():
         try:
@@ -179,4 +205,4 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df["Index"] = df[["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]].apply(lambda row: " • ".join(value for value in row if value != "Not Available") or "Not Available", axis=1); df = df.drop(columns=["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"])
     else: df["Industry"] = pd.Series(dtype=str); df["Index"] = pd.Series(dtype=str)
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str); columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]; df = df[columns]
-    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size}; return df, stats
+    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size, "snapshot_mode": snapshot["mode"], "snapshot_day": snapshot["snapshot_day"], "downloaded_at": snapshot["downloaded_at"], "data_date": snapshot["data_date"]}; return df, stats
