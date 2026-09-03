@@ -115,14 +115,14 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
     return result
 
 
-def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True) -> dict[str, pd.DataFrame]:
+def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True, period: str = "2y") -> dict[str, pd.DataFrame]:
     tickers = [f"{s}.NS" for s in symbols]
     last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
             raw = yf.download(
                 tickers=tickers,
-                period="2y",
+                period=period,
                 interval="1d",
                 auto_adjust=True,
                 progress=False,
@@ -160,6 +160,15 @@ def _latest_date(frame: pd.DataFrame) -> Optional[str]:
         return pd.Timestamp(frame.index[-1]).date().isoformat()
     except Exception:
         return None
+
+
+def _merge_history(old: pd.DataFrame, recent: pd.DataFrame) -> pd.DataFrame:
+    """Merge a recent recovery window into the original long history."""
+    if recent is None or recent.empty:
+        return old
+    if old is None or old.empty:
+        return recent
+    return _clean_history(pd.concat([old, recent], axis=0))
 
 
 def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
@@ -229,34 +238,29 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         if progress_callback:
             progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
 
-    # A bulk Yahoo download can return a complete-looking universe whose latest
-    # bar is one trading day behind. Recover stale symbols before calculating RS.
+    # Bulk 2-year downloads can be complete but one trading day behind.
+    # Recover the latest bars using a short recent window, then merge them into
+    # the original 2-year histories. This avoids thousands of individual calls.
     initial_dates = [_latest_date(frame) for frame in data.values()]
     initial_dates = [date for date in initial_dates if date]
     target_date = max(initial_dates) if initial_dates else None
     stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
     if stale_symbols:
+        total_stale = len(stale_symbols)
         if progress_callback:
-            progress_callback(0, len(stale_symbols), f"Recovering {len(stale_symbols):,} stale symbols for {target_date}")
-        for start in range(0, len(stale_symbols), 10):
-            group = stale_symbols[start:start + 10]
-            recovered = _download_batch(group, retries=2, threads=False)
-            for symbol, frame in recovered.items():
-                recovered_date = _latest_date(frame)
-                if recovered_date == target_date:
-                    data[symbol] = frame
-            done = min(start + len(group), len(stale_symbols))
+            progress_callback(0, total_stale, f"Recovering {total_stale:,} stale symbols for {target_date}")
+        recovery_batch_size = 50
+        for start in range(0, total_stale, recovery_batch_size):
+            group = stale_symbols[start:start + recovery_batch_size]
+            recovered = _download_batch(group, retries=2, threads=True, period="10d")
+            for symbol, recent in recovered.items():
+                if _latest_date(recent) == target_date:
+                    data[symbol] = _merge_history(data.get(symbol), recent)
+            done = min(start + len(group), total_stale)
             if progress_callback:
-                progress_callback(done, len(stale_symbols), f"Stale-data recovery · {done:,}/{len(stale_symbols):,}")
-            if start + 10 < len(stale_symbols):
+                progress_callback(done, total_stale, f"Stale-data recovery · {done:,}/{total_stale:,}")
+            if start + recovery_batch_size < total_stale:
                 time.sleep(0.25)
-
-        still_stale = [symbol for symbol in stale_symbols if target_date and _latest_date(data.get(symbol)) < target_date]
-        for symbol in still_stale:
-            recovered = _download_batch([symbol], retries=1, threads=False)
-            frame = recovered.get(symbol)
-            if frame is not None and _latest_date(frame) == target_date:
-                data[symbol] = frame
 
     usable = [
         symbol
