@@ -97,26 +97,38 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         if progress_callback: progress_callback(len(symbols), len(symbols), f"{mode.upper()} snapshot ready (cached)")
         return cached
 
-    total = len(symbols); data: dict[str, pd.DataFrame] = {}
+    total = len(symbols); data: dict[str, pd.DataFrame] = {}; failed: list[str] = []
     batch_count = (total + batch_size - 1) // batch_size
     for batch_no, start in enumerate(range(0, total, batch_size), start=1):
         batch = symbols[start:start + batch_size]
-        if progress_callback:
-            progress_callback(start, total, f"Downloading {mode.upper()} data · batch {batch_no}/{batch_count}")
+        if progress_callback: progress_callback(start, total, f"Downloading {mode.upper()} data · batch {batch_no}/{batch_count}")
         batch_data = _download_batch(batch)
         missing = [symbol for symbol in batch if symbol not in batch_data]
         if missing: batch_data.update(_download_missing(missing))
+        unresolved = [symbol for symbol in batch if symbol not in batch_data]
+        failed.extend(unresolved)
         data.update(batch_data)
         done = min(start + len(batch), total)
-        if progress_callback:
-            progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
+        if progress_callback: progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
 
+    usable = [symbol for symbol, frame in data.items() if frame is not None and not frame.empty and "Close" in frame.columns and len(frame["Close"].dropna()) > 252]
+    usable_set = set(usable)
+    missing = sorted(set(symbols) - set(data))
+    short_history = sorted(set(data) - usable_set)
     snapshot = {
         "data": data,
         "downloaded_at": datetime.now(IST).isoformat(timespec="seconds"),
         "mode": mode,
         "snapshot_day": snapshot_day,
         "data_date": _snapshot_data_date(data),
+        "universe": total,
+        "downloaded": len(data),
+        "missing": missing,
+        "missing_count": len(missing),
+        "short_history": short_history,
+        "short_history_count": len(short_history),
+        "usable": len(usable),
+        "usable_coverage": (len(usable) / total * 100) if total else 0,
     }
     _STOCK_DATA_CACHE[key] = snapshot
     if progress_callback: progress_callback(total, total, f"{mode.upper()} snapshot ready")
@@ -184,7 +196,7 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
-    symbols = get_nse_symbols(); total = len(symbols); snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback); data = snapshot["data"]; downloaded = len(data); coverage = (downloaded / total * 100) if total else 0
+    symbols = get_nse_symbols(); total = len(symbols); snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback); data = snapshot["data"]; downloaded = snapshot["downloaded"]; coverage = (downloaded / total * 100) if total else 0
     rows = []
     for symbol, x in data.items():
         try:
@@ -204,5 +216,6 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         for i, col in enumerate(["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]): df[col] = [values[i] for values in index_values]
         df["Index"] = df[["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"]].apply(lambda row: " • ".join(value for value in row if value != "Not Available") or "Not Available", axis=1); df = df.drop(columns=["Index 1", "Index 2", "Index 3", "Index 4", "Index 5"])
     else: df["Industry"] = pd.Series(dtype=str); df["Index"] = pd.Series(dtype=str)
-    df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str); columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "History Days", "TradingView"]; df = df[columns]
-    stats = {"universe": total, "coverage": coverage, "downloaded": downloaded, "usable": len(rows), "missing": total - downloaded, "batch_size": batch_size, "snapshot_mode": snapshot["mode"], "snapshot_day": snapshot["snapshot_day"], "downloaded_at": snapshot["downloaded_at"], "data_date": snapshot["data_date"]}; return df, stats
+    df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str); columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "50 DMA Rising", "150 DMA Rising", "200 DMA Rising", "History Days", "TradingView"]; df = df[[c for c in columns if c in df.columns]]
+    stats = {"universe": total, "downloaded": downloaded, "coverage": coverage, "usable": snapshot["usable"], "usable_coverage": snapshot["usable_coverage"], "missing": snapshot["missing"], "missing_count": snapshot["missing_count"], "short_history": snapshot["short_history"], "short_history_count": snapshot["short_history_count"], "snapshot_mode": snapshot["mode"], "snapshot_day": snapshot["snapshot_day"], "data_date": snapshot["data_date"], "downloaded_at": snapshot["downloaded_at"], "batch_size": batch_size}
+    return df, stats
