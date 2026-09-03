@@ -16,23 +16,51 @@ NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
+MIN_SAFE_UNIVERSE_SIZE = 1000
 IST = ZoneInfo("Asia/Kolkata")
 _STOCK_DATA_CACHE: dict[tuple[str, str, tuple[str, ...], int], dict] = {}
 
 
+def _normalize_symbol_list(values) -> list[str]:
+    symbols = pd.Series(values, dtype="string").str.strip().str.upper()
+    symbols = symbols.replace({"": pd.NA, "NAN": pd.NA, "NONE": pd.NA, "SYMBOL": pd.NA}).dropna()
+    return sorted(symbols.drop_duplicates().tolist())
+
+
 def get_nse_symbols() -> list[str]:
+    """Load a full NSE equity universe; never silently scan a tiny fallback list."""
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"}
+    nse_error = "unknown error"
     try:
-        r = requests.get(NSE_URL, headers=headers, timeout=20); r.raise_for_status()
-        df = pd.read_csv(io.BytesIO(r.content)); col = next((c for c in ["SYMBOL", "Symbol", "symbol"] if c in df.columns), None)
-        if not col: raise ValueError("NSE CSV has no SYMBOL column")
-        symbols = df[col].astype(str).str.strip().replace("nan", np.nan).dropna().unique().tolist(); symbols = [s for s in symbols if s and s != "SYMBOL"]
-        if len(symbols) >= 100: return sorted(symbols)
-    except Exception: pass
+        r = requests.get(NSE_URL, headers=headers, timeout=20)
+        r.raise_for_status()
+        if not r.content:
+            raise ValueError("NSE returned an empty response")
+        df = pd.read_csv(io.BytesIO(r.content))
+        col = next((c for c in ["SYMBOL", "Symbol", "symbol"] if c in df.columns), None)
+        if not col:
+            raise ValueError("NSE CSV has no SYMBOL column")
+        symbols = _normalize_symbol_list(df[col])
+        if len(symbols) < MIN_SAFE_UNIVERSE_SIZE:
+            raise ValueError(f"NSE universe is suspiciously small ({len(symbols):,} symbols)")
+        return symbols
+    except Exception as e:
+        nse_error = str(e)
+
     try:
-        fallback = pd.read_csv("symbols.csv"); col = "Symbol" if "Symbol" in fallback.columns else fallback.columns[0]
-        return sorted(fallback[col].dropna().astype(str).str.strip().unique())
-    except Exception as e: raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
+        fallback = pd.read_csv("symbols.csv")
+        if fallback.empty or len(fallback.columns) == 0:
+            raise ValueError("symbols.csv is empty")
+        col = "Symbol" if "Symbol" in fallback.columns else fallback.columns[0]
+        symbols = _normalize_symbol_list(fallback[col])
+        if len(symbols) < MIN_SAFE_UNIVERSE_SIZE:
+            raise ValueError(f"symbols.csv contains only {len(symbols):,} symbols")
+        return symbols
+    except Exception as fallback_error:
+        raise RuntimeError(
+            "NSE universe validation failed, so the scan was stopped to protect RS ranking integrity. "
+            f"NSE source: {nse_error}. Fallback: {fallback_error}."
+        ) from fallback_error
 
 
 def _clean_history(frame: pd.DataFrame) -> pd.DataFrame:
