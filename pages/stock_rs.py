@@ -1,4 +1,3 @@
-# Market snapshot UI v2
 import streamlit as st
 import pandas as pd
 from rs_engine import run_scan, DEFAULT_BATCH_SIZE, clear_stock_data_cache
@@ -18,53 +17,57 @@ with side:
 with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">Scan settings</div>', unsafe_allow_html=True)
-        st.markdown('<div class="help" style="margin:.1rem 0 .65rem 0"><b>Choose filters independently.</b> Only checked conditions are applied to the scan.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="help" style="margin:.05rem 0 .55rem 0">Turn a filter on to include it. Off = not applied.</div>', unsafe_allow_html=True)
 
-        st.markdown('<div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:.2rem 0 .25rem 0;opacity:.8">Core filters</div>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = st.columns(3, gap="medium")
         with c1:
             use_min_rs = st.checkbox("Minimum RS", value=True, key="stock_use_min_rs")
             min_rs = st.slider("RS threshold", 50, 99, 80, key="stock_min_rs")
-            st.markdown(f'<div class="help"><span style="color:#35d07f;font-weight:700">RS ≥ {min_rs}</span> · relative-strength filter</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="filter-state {"active" if use_min_rs else "inactive"}">{"ON" if use_min_rs else "OFF"} · RS ≥ {min_rs}</div>', unsafe_allow_html=True)
         with c2:
-            use_near_high = st.checkbox("Within 52W high", value=True, key="stock_use_near_high")
+            use_near_high = st.checkbox("Near 52W high", value=True, key="stock_use_near_high")
             near_high = st.slider("Maximum distance (%)", 1, 25, 5, key="stock_near_high")
-            st.markdown(f'<div class="help"><span style="color:#35d07f;font-weight:700">≤ {near_high}%</span> from highest 252-session Close</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="filter-state {"active" if use_near_high else "inactive"}">{"ON" if use_near_high else "OFF"} · ≤ {near_high}% from 52W high</div>', unsafe_allow_html=True)
         with c3:
             use_min_price = st.checkbox("Minimum price", value=True, key="stock_use_min_price")
-            min_price = st.number_input("Price (₹)", min_value=1.0, value=100.0, step=10.0, key="stock_min_price")
-            st.markdown(f'<div class="help"><span style="color:#35d07f;font-weight:700">₹{min_price:,.0f}+</span> · minimum LTP</div>', unsafe_allow_html=True)
+            min_price = st.number_input("Minimum LTP (₹)", min_value=1.0, value=100.0, step=10.0, key="stock_min_price")
+            st.markdown(f'<div class="filter-state {"active" if use_min_price else "inactive"}">{"ON" if use_min_price else "OFF"} · ₹{min_price:,.0f}+</div>', unsafe_allow_html=True)
 
-        st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:.2rem 0 .25rem 0;opacity:.8">Trend filters</div>', unsafe_allow_html=True)
-        t1, t2 = st.columns([1.45, 1.0])
+        st.markdown('<div class="trend-row">', unsafe_allow_html=True)
+        t1, t2 = st.columns(2, gap="medium")
         with t1:
             use_minervini = st.checkbox("Minervini MA trend", value=True, key="stock_minervini")
-            st.markdown('<div class="help"><span style="color:#35d07f;font-weight:700">Price &gt; 50 / 150 / 200 DMA</span></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="filter-state {"active" if use_minervini else "inactive"}">{"ON" if use_minervini else "OFF"} · Price &gt; 50 / 150 / 200 DMA</div>', unsafe_allow_html=True)
         with t2:
             use_ma_rising = st.checkbox("MA rising", value=False, key="stock_use_ma_rising")
             rising_days = st.slider("Rising days", 5, 40, 20, key="stock_rising_days")
-            st.markdown(f'<div class="help"><span style="color:#f3b94b;font-weight:700">{rising_days}-day rise</span> · all 3 DMAs</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="filter-state {"active" if use_ma_rising else "inactive"}>{"ON" if use_ma_rising else "OFF"} · all 3 DMAs rising for {rising_days} days</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="settings-foot">Market data: <b>2 years of daily OHLCV</b> · fixed download batch: <b>100 symbols</b> · 52W High uses highest daily Close over the latest 252 trading rows.</div>', unsafe_allow_html=True)
+        active_parts = []
+        if use_min_rs: active_parts.append(f"RS ≥ {min_rs}")
+        if use_near_high: active_parts.append(f"≤ {near_high}% from 52W high")
+        if use_min_price: active_parts.append(f"₹{min_price:,.0f}+")
+        if use_minervini: active_parts.append("Minervini MA")
+        if use_ma_rising: active_parts.append(f"MA rising {rising_days}d")
+        active_summary = "  •  ".join(active_parts) if active_parts else "No filters — full universe"
+        st.markdown(f'<div class="active-summary"><span>ACTIVE FILTERS</span><strong>{active_summary}</strong></div>', unsafe_allow_html=True)
+        st.markdown('<div class="settings-foot">2 years daily OHLCV · batch 100 · 52W High = highest Close in latest 252 trading rows</div>', unsafe_allow_html=True)
 
-        st.markdown('<div style="height:.3rem"></div>', unsafe_allow_html=True)
-        scan1, scan2, refresh = st.columns([1.6, 1.6, 1.8])
+        st.markdown('<div class="scan-actions-title">RUN SCAN</div>', unsafe_allow_html=True)
+        scan1, scan2, refresh = st.columns([1.45, 1.45, 1.55], gap="small")
         with scan1:
             run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True, help="Run using the day's intraday market-data snapshot.")
         with scan2:
             run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True, help="Run using the completed EOD market-data snapshot.")
         with refresh:
-            with st.popover("↻  Refresh Market Data", use_container_width=True, help="Open refresh confirmation before clearing snapshots."):
+            with st.popover("↻  Refresh Data", use_container_width=True, help="Confirm before clearing the current market-data snapshots."):
                 st.markdown("**Refresh market data?**")
-                st.caption("This discards the current INTRADAY/EOD snapshots. A fresh download will happen on the next scan. Your current results remain untouched until you confirm.")
-                rc1, rc2 = st.columns(2)
-                with rc1:
-                    confirm_refresh = st.button("Confirm Refresh", type="primary", use_container_width=True, key="confirm_stock_refresh")
-                with rc2:
-                    st.button("Cancel", use_container_width=True, key="cancel_stock_refresh")
+                st.caption("Current snapshots will be discarded. Your displayed results stay unchanged until you confirm.")
+                confirm_refresh = st.button("Confirm Refresh", type="primary", use_container_width=True, key="confirm_stock_refresh")
+                st.button("Cancel", use_container_width=True, key="cancel_stock_refresh")
 
-    if "confirm_refresh" in locals() and confirm_refresh:
+    if confirm_refresh:
         clear_stock_data_cache()
         st.session_state.stock_result = None
         st.session_state.pop("stock_stats", None)
@@ -96,7 +99,7 @@ with main:
     df = st.session_state.stock_result
     if df is None:
         stats_slot.markdown('<div class="rstat"><div class="rstat-label">Status</div><div class="rstat-value">Waiting</div></div><div class="help">Choose 14:00 Scan for the intraday snapshot or 21:00 EOD Scan for the completed daily snapshot.</div>', unsafe_allow_html=True)
-        st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">The scanner will evaluate the NSE universe using your selected RS, 52-week and technical filters.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">The scanner will evaluate the NSE universe using your selected filters.</div></div>', unsafe_allow_html=True)
     else:
         stats = st.session_state.get("stock_stats", {})
         matches = len(df); near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0; strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
