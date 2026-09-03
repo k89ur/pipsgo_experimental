@@ -35,6 +35,27 @@ def get_nse_symbols() -> list[str]:
     except Exception as e: raise RuntimeError("Could not load NSE symbols. Keep an updated symbols.csv beside app.py.") from e
 
 
+def _clean_history(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize a downloaded symbol history before any row-based calculations."""
+    if frame is None or frame.empty or "Close" not in frame.columns:
+        return pd.DataFrame()
+    x = frame.copy()
+    try:
+        idx = pd.to_datetime(x.index, errors="coerce")
+        if getattr(idx, "tz", None) is not None:
+            idx = idx.tz_localize(None)
+        x.index = idx
+        x = x[~x.index.isna()]
+        x = x.sort_index()
+        x = x[~x.index.duplicated(keep="last")]
+    except Exception:
+        return pd.DataFrame()
+    x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
+    x = x.replace([np.inf, -np.inf], np.nan)
+    x = x[x["Close"] > 0]
+    return x
+
+
 def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
     result: dict[str, pd.DataFrame] = {}
     if raw is None or raw.empty: return result
@@ -46,11 +67,14 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
                 if t in level0: x = raw[t].copy()
                 elif t in level1: x = raw.xs(t, axis=1, level=1).copy()
                 else: continue
-                if "Close" in x.columns and not x["Close"].dropna().empty: result[s] = x.dropna(subset=["Close"])
+                x = _clean_history(x)
+                if not x.empty: result[s] = x
             except Exception: continue
     else:
         s = symbols[0]
-        if "Close" in raw.columns: result[s] = raw.dropna(subset=["Close"])
+        if "Close" in raw.columns:
+            x = _clean_history(raw)
+            if not x.empty: result[s] = x
     return result
 
 
