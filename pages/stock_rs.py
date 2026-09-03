@@ -22,6 +22,7 @@ def refresh_market_data_dialog():
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable scan filters</div></div>', unsafe_allow_html=True)
+st.warning("⚠️ The app is under development. Stock scanning is temporarily disabled.")
 
 main, side = st.columns([4.7, 1.35], gap="large")
 with side:
@@ -56,11 +57,11 @@ with main:
         st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
         scan1, scan2, refresh = st.columns([1.45, 1.45, 1.55], gap="small")
         with scan1:
-            run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True)
+            run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True, disabled=True)
         with scan2:
-            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True)
+            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True, disabled=True)
         with refresh:
-            if st.button("↻  Refresh Data", use_container_width=True):
+            if st.button("↻  Refresh Data", use_container_width=True, disabled=True):
                 refresh_market_data_dialog()
 
     if st.session_state.get("stock_refresh_message"):
