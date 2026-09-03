@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import time
+from collections import Counter
 from datetime import datetime
 from functools import lru_cache
 from typing import Callable, Optional
@@ -14,7 +15,7 @@ import yfinance as yf
 
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
-STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
+STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
 DEFAULT_BATCH_SIZE = 100
 MIN_SAFE_UNIVERSE_SIZE = 1000
 IST = ZoneInfo("Asia/Kolkata")
@@ -171,11 +172,14 @@ def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
             "date_consistent": False,
             "stale_data_count": 0,
             "stale_data_symbols": [],
+            "date_distribution": {},
         }
 
+    counts = Counter(dates)
     min_date = min(dates)
     max_date = max(dates)
     stale_symbols = sorted(symbol for symbol, date in latest_by_symbol.items() if date < max_date)
+    distribution = dict(sorted(counts.items(), key=lambda item: item[0], reverse=True))
     return {
         "data_date": max_date,
         "min_data_date": min_date,
@@ -183,6 +187,7 @@ def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
         "date_consistent": min_date == max_date,
         "stale_data_count": len(stale_symbols),
         "stale_data_symbols": stale_symbols,
+        "date_distribution": distribution,
     }
 
 
@@ -241,6 +246,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "date_consistent": date_diagnostics["date_consistent"],
         "stale_data_count": date_diagnostics["stale_data_count"],
         "stale_data_symbols": date_diagnostics["stale_data_symbols"],
+        "date_distribution": date_diagnostics["date_distribution"],
         "universe": total,
         "downloaded": len(data),
         "missing": missing,
@@ -437,6 +443,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         "date_consistent": snapshot["date_consistent"],
         "stale_data_count": snapshot["stale_data_count"],
         "stale_data_symbols": snapshot["stale_data_symbols"],
+        "date_distribution": snapshot["date_distribution"],
         "downloaded_at": snapshot["downloaded_at"],
         "batch_size": batch_size,
     }
