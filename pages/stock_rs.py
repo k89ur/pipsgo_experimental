@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from rs_engine import run_scan, DEFAULT_BATCH_SIZE
+from rs_engine import run_scan, DEFAULT_BATCH_SIZE, clear_stock_data_cache
 
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
@@ -37,10 +37,23 @@ with main:
             st.markdown(f'<div class="help" style="padding-top:.4rem">Price above 50 / 150 / 200 DMA · data batch fixed at {DEFAULT_BATCH_SIZE}.</div>', unsafe_allow_html=True)
         with b3:
             st.markdown('<div class="help" style="padding-top:.4rem">MA values are used internally for scanning and are not displayed in results.</div>', unsafe_allow_html=True)
-        run_stock = st.button("▶  Run Stock Scan", type="primary")
+        scan1, scan2, refresh = st.columns([1.6, 1.6, 1.8])
+        with scan1:
+            run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True, help="Run using the day's intraday market-data snapshot.")
+        with scan2:
+            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True, help="Run using the completed EOD market-data snapshot.")
+        with refresh:
+            refresh_data = st.button("↻  Refresh Market Data", use_container_width=True, help="Discard the current market-data snapshots and download fresh data on the next scan.")
 
-    if run_stock:
-        progress = status_slot.progress(0, text="Starting…")
+    if refresh_data:
+        clear_stock_data_cache()
+        st.session_state.stock_result = None
+        st.session_state.pop("stock_stats", None)
+        st.session_state["stock_refresh_message"] = "Market-data snapshots cleared. The next scan will download fresh data."
+
+    scan_mode = "intraday" if run_intraday else ("eod" if run_eod else None)
+    if scan_mode:
+        progress = status_slot.progress(0, text=f"Starting {scan_mode.upper()} scan…")
         try:
             def stock_update(done, total, message):
                 pct = min(done / max(total, 1), 1.0)
@@ -50,22 +63,25 @@ with main:
                 min_rs=min_rs, near_high_pct=near_high, min_price=min_price, rising_days=rising_days,
                 use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price,
                 use_ma_rising=use_ma_rising, use_minervini=use_minervini, batch_size=DEFAULT_BATCH_SIZE,
-                progress_callback=stock_update,
+                snapshot_mode=scan_mode, progress_callback=stock_update,
             )
             st.session_state.stock_result = result; st.session_state.stock_stats = stats
-            progress.progress(1.0, text="Scan complete")
-            stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Status</div><div class='rstat-value score-strong'>Complete</div></div><div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{len(result):,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div>", unsafe_allow_html=True)
+            progress.progress(1.0, text=f"{scan_mode.upper()} scan complete")
+            stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Status</div><div class='rstat-value score-strong'>Complete</div></div><div class='rstat'><div class='rstat-label'>Mode</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()}</div></div><div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{len(result):,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{stats.get('data_date','—')}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
         except Exception as e:
             progress.empty(); status_slot.error("Scan failed"); st.error(f"Stock scan failed: {e}")
 
+    if st.session_state.get("stock_refresh_message"):
+        st.info(st.session_state.pop("stock_refresh_message"))
+
     df = st.session_state.stock_result
     if df is None:
-        stats_slot.markdown('<div class="rstat"><div class="rstat-label">Status</div><div class="rstat-value">Waiting</div></div><div class="help">Configure the scan and press Run. Results will appear below.</div>', unsafe_allow_html=True)
+        stats_slot.markdown('<div class="rstat"><div class="rstat-label">Status</div><div class="rstat-value">Waiting</div></div><div class="help">Choose 14:00 Scan for the intraday snapshot or 21:00 EOD Scan for the completed daily snapshot.</div>', unsafe_allow_html=True)
         st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">The scanner will evaluate the NSE universe using your selected RS, 52-week and technical filters.</div></div>', unsafe_allow_html=True)
     else:
         stats = st.session_state.get("stock_stats", {})
         matches = len(df); near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0; strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
-        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div>", unsafe_allow_html=True)
+        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('data_date','—')}</div></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
