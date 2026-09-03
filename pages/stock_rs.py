@@ -53,7 +53,7 @@ with main:
         with scan1:
             run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True, help="Run using the day's intraday market-data snapshot.")
         with scan2:
-            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True, use_container_width=True, help="Run using the completed EOD market-data snapshot.")
+            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True, help="Run using the completed EOD market-data snapshot.")
         with refresh:
             with st.popover("↻  Refresh Market Data", use_container_width=True, help="Open refresh confirmation before clearing snapshots."):
                 st.markdown("**Refresh market data?**")
