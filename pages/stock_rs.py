@@ -1,3 +1,4 @@
+# Market snapshot UI v2
 import streamlit as st
 import pandas as pd
 from rs_engine import run_scan, DEFAULT_BATCH_SIZE, clear_stock_data_cache
