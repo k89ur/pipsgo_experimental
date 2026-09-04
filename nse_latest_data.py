@@ -48,8 +48,9 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
 def _fetch_nse_bhavcopy(
     max_lookback_days: int = 5,
     require_today: bool = False,
+    equity_only: bool = True,
 ) -> tuple[str, pd.DataFrame]:
-    """Return the newest NSE bhavcopy rows for supported equity series."""
+    """Return the newest NSE bhavcopy rows, optionally limited to supported equity series."""
     now = datetime.now(IST)
     today = now.date()
     if require_today and (now.hour, now.minute) < EQUITY_CLOSE_TIME:
@@ -70,7 +71,8 @@ def _fetch_nse_bhavcopy(
                     raise ValueError("NSE returned non-CSV content")
                 df = _read_bhavcopy(response.content)
                 df["SERIES"] = df["SERIES"].astype(str).str.strip().str.upper()
-                df = df[df["SERIES"].isin(EQUITY_SERIES)].copy()
+                if equity_only:
+                    df = df[df["SERIES"].isin(EQUITY_SERIES)].copy()
                 df["SYMBOL"] = df["SYMBOL"].astype(str).str.strip().str.upper()
                 df["CLOSE_PRICE"] = pd.to_numeric(df["CLOSE_PRICE"], errors="coerce")
                 df = df.dropna(subset=["SYMBOL", "CLOSE_PRICE"])
@@ -94,6 +96,7 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
     actual_date, df = _fetch_nse_bhavcopy(
         max_lookback_days=max_lookback_days,
         require_today=require_today,
+        equity_only=True,
     )
     return actual_date, dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
 
@@ -181,9 +184,9 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
     data = snapshot.get("data", {}) if isinstance(snapshot, dict) else {}
     fallback_2y = _download_yahoo_2y(symbols) if not data else {}
     try:
-        nse_date, nse_rows = _fetch_nse_bhavcopy(require_today=False)
+        nse_date, nse_rows = _fetch_nse_bhavcopy(require_today=False, equity_only=False)
+        nse_rows = nse_rows[nse_rows["SYMBOL"].isin(symbols)].copy()
         nse_closes = dict(zip(nse_rows["SYMBOL"], nse_rows["CLOSE_PRICE"].astype(float)))
-        nse_rows = nse_rows.copy()
         if "TTL_TRD_QTY" in nse_rows.columns:
             nse_rows["TTL_TRD_QTY"] = pd.to_numeric(nse_rows["TTL_TRD_QTY"], errors="coerce")
         nse_lookup = {
