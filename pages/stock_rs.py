@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 import rs_engine
-from nse_latest_data import install_nse_latest_close
+from nse_latest_data import install_nse_latest_close, source_check
 
 install_nse_latest_close(rs_engine)
 run_scan = rs_engine.run_scan
@@ -25,6 +25,7 @@ def refresh_market_data_dialog():
             clear_stock_data_cache()
             st.session_state.stock_result = None
             st.session_state.pop("stock_stats", None)
+            st.session_state.pop("source_check", None)
             st.session_state["stock_refresh_message"] = "Market data cleared."
             st.rerun()
     with c2:
@@ -91,6 +92,7 @@ with main:
             result, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, rising_days=rising_days, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price, use_ma_rising=use_ma_rising, use_minervini=use_minervini, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=scan_mode, progress_callback=stock_update)
             st.session_state.stock_result = result
             st.session_state.stock_stats = stats
+            st.session_state.pop("source_check", None)
             progress.progress(1.0, text=f"{scan_mode.upper()} scan complete")
             stale_count = stats.get("stale_data_count", 0)
             date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
@@ -131,6 +133,13 @@ with main:
                     if stale_symbols:
                         st.caption("Stale symbols")
                         st.write(", ".join(stale_symbols))
+                        if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
+                            with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
+                                st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
+                        source_df = st.session_state.get("source_check")
+                        if source_df is not None:
+                            st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
+                            st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
