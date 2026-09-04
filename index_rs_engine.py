@@ -28,6 +28,7 @@ EXCHANGE = "NSE"
 BARS = 500
 RETRY_BARS = 1000
 REQUIRED_BARS = 253
+AUDIT_INDEXES = ["CNXMETAL", "NIFTY_IND_DEFENCE", "NIFTY_IPO", "CNXENERGY"]
 
 
 def _empty_result() -> pd.Series:
@@ -69,6 +70,23 @@ def _pine_score(close: pd.Series, benchmark: pd.Series) -> dict[str, float]:
         total += relative * weight
     result["Raw RS"] = total
     return result
+
+
+def _audit_points(close: pd.Series, benchmark: pd.Series, metrics: dict[str, float]) -> dict:
+    calendar = benchmark.index.sort_values().unique()
+    c = close.reindex(calendar).ffill()
+    b = benchmark.reindex(calendar).ffill()
+    points = [("3M", 63), ("6M", 126), ("9M", 189), ("12M", 252)]
+    out = {"Index Current Date": c.index[-1], "Index Current Close": float(c.iloc[-1]),
+           "Benchmark Current Date": b.index[-1], "Benchmark Current Close": float(b.iloc[-1])}
+    for label, bars in points:
+        idx = -bars - 1
+        out[f"{label} Date"] = c.index[idx]
+        out[f"{label} Index Close"] = float(c.iloc[idx])
+        out[f"{label} Benchmark Close"] = float(b.iloc[idx])
+        out[f"{label} Relative %"] = float(metrics[f"{label} %"])
+    out["Raw RS"] = float(metrics["Raw RS"])
+    return out
 
 
 def _rating(value: float, scores: list[float]):
@@ -118,6 +136,7 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
 
     benchmark_latest = benchmark.index[-1]
     rows = []
+    audit_rows = []
     for alias, symbol in INDEX_UNIVERSE:
         close = results.get(alias, _empty_result())
         if close.empty:
@@ -134,6 +153,8 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
             status = "OK"
         rows.append({"INDEX": alias, "TradingView": f"NSE:{symbol}", "LTP": float(close.iloc[-1]), **metrics,
                      "Bars": len(close), "First Date": first_date, "Latest Date": latest_date, "Status": status})
+        if alias in AUDIT_INDEXES and pd.notna(metrics["Raw RS"]):
+            audit_rows.append({"INDEX": alias, **_audit_points(close, benchmark, metrics)})
 
     df = pd.DataFrame(rows)
     scores = df["Raw RS"].tolist()
@@ -153,5 +174,6 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
         "stale_count": int(stale_mask.sum()),
         "stale_symbols": df.loc[stale_mask, "INDEX"].tolist(),
         "unavailable_count": int(df["Latest Date"].isna().sum()),
+        "audit_points": audit_rows,
         "source": "TradingView daily bars (same symbols as Pine)",
     }
