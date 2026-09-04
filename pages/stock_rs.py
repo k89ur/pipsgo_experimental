@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 import rs_engine
 from nse_latest_data import install_nse_latest_close
 
@@ -7,6 +9,9 @@ install_nse_latest_close(rs_engine)
 run_scan = rs_engine.run_scan
 DEFAULT_BATCH_SIZE = rs_engine.DEFAULT_BATCH_SIZE
 clear_stock_data_cache = rs_engine.clear_stock_data_cache
+IST = ZoneInfo("Asia/Kolkata")
+NSE_OPEN = time(9, 15)
+NSE_CLOSE = time(15, 30)
 
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
@@ -73,6 +78,12 @@ with main:
         st.success(st.session_state.pop("stock_refresh_message"))
 
     scan_mode = "intraday" if run_intraday else ("eod" if run_eod else None)
+    if scan_mode == "eod":
+        now_ist = datetime.now(IST)
+        if now_ist.weekday() < 5 and NSE_OPEN <= now_ist.time() < NSE_CLOSE:
+            st.warning("⚠️ EOD Scan is available only after the NSE market closes at 15:30 IST and before the next market open at 09:15 IST.")
+            scan_mode = None
+
     if scan_mode:
         progress = status_slot.progress(0, text=f"Starting {scan_mode.upper()} scan…")
         try:
