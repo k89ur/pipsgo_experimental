@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from collections import Counter
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -205,6 +206,62 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _refresh_snapshot_diagnostics(snapshot: dict) -> None:
+    """Recompute snapshot integrity fields after the NSE EOD overlay."""
+    data = snapshot.get("data", {})
+    latest_by_symbol: dict[str, str] = {}
+    for symbol, frame in data.items():
+        if frame is None or frame.empty:
+            continue
+        try:
+            latest = pd.Timestamp(frame.index[-1]).date().isoformat()
+            latest_by_symbol[symbol] = latest
+        except Exception:
+            continue
+
+    dates = list(latest_by_symbol.values())
+    if dates:
+        counts = Counter(dates)
+        min_date = min(dates)
+        max_date = max(dates)
+        stale_symbols = sorted(symbol for symbol, date in latest_by_symbol.items() if date < max_date)
+        distribution = dict(sorted(counts.items(), key=lambda item: item[0], reverse=True))
+        snapshot["data_date"] = max_date
+        snapshot["min_data_date"] = min_date
+        snapshot["max_data_date"] = max_date
+        snapshot["date_consistent"] = min_date == max_date
+        snapshot["stale_data_count"] = len(stale_symbols)
+        snapshot["stale_data_symbols"] = stale_symbols
+        snapshot["date_distribution"] = distribution
+    else:
+        snapshot["data_date"] = "Unknown"
+        snapshot["min_data_date"] = "Unknown"
+        snapshot["max_data_date"] = "Unknown"
+        snapshot["date_consistent"] = False
+        snapshot["stale_data_count"] = 0
+        snapshot["stale_data_symbols"] = []
+        snapshot["date_distribution"] = {}
+
+    universe = int(snapshot.get("universe", len(data)))
+    usable_symbols = []
+    for symbol, frame in data.items():
+        if frame is None or frame.empty or "Close" not in frame.columns:
+            continue
+        if len(frame["Close"].dropna()) > 252:
+            usable_symbols.append(symbol)
+    stale_set = set(snapshot.get("stale_data_symbols", []))
+    usable_symbols = [symbol for symbol in usable_symbols if symbol not in stale_set]
+    missing = sorted(set(snapshot.get("missing", [])))
+    short_history = sorted((set(data) - set(usable_symbols)) | stale_set)
+    snapshot["downloaded"] = len(data)
+    snapshot["missing"] = missing
+    snapshot["missing_count"] = len(missing)
+    snapshot["short_history"] = short_history
+    snapshot["short_history_count"] = len(short_history)
+    snapshot["usable"] = len(usable_symbols)
+    snapshot["usable_coverage"] = (len(usable_symbols) / universe * 100) if universe else 0
+
+
 def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     """Overlay the official NSE close for EOD scans while preserving Yahoo adjusted-price scale."""
     data = snapshot.get("data", {})
@@ -244,6 +301,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
+    _refresh_snapshot_diagnostics(snapshot)
     if progress_callback: progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
     return snapshot
 
