@@ -70,6 +70,7 @@ def _fetch_nse_bhavcopy(
                 if not response.content or response.content.lstrip().startswith(b"<"):
                     raise ValueError("NSE returned non-CSV content")
                 df = _read_bhavcopy(response.content)
+                df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
                 df["SERIES"] = df["SERIES"].astype(str).str.strip().str.upper()
                 if equity_only:
                     df = df[df["SERIES"].isin(EQUITY_SERIES)].copy()
@@ -189,9 +190,7 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
         nse_closes = dict(zip(nse_rows["SYMBOL"], nse_rows["CLOSE_PRICE"].astype(float)))
         if "TTL_TRD_QTY" in nse_rows.columns:
             nse_rows["TTL_TRD_QTY"] = pd.to_numeric(nse_rows["TTL_TRD_QTY"], errors="coerce")
-        nse_lookup = {
-            symbol: row for symbol, row in nse_rows.set_index("SYMBOL").iterrows()
-        }
+        nse_lookup = {symbol: row for symbol, row in nse_rows.set_index("SYMBOL").iterrows()}
         nse_error = ""
     except Exception as exc:
         nse_date, nse_closes = "—", {}
@@ -308,7 +307,17 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     data = snapshot.get("data", {})
     if not data or str(snapshot.get("mode", "eod")).lower() != "eod": return snapshot
     if progress_callback: progress_callback(0, 1, "Loading latest NSE bhavcopy")
-    nse_date, closes = fetch_latest_nse_close(require_today=True)
+
+    # On a normal weekday after the close, require today's NSE EOD report.
+    # On Saturday/Sunday, the newest available bhavcopy is the prior trading
+    # session (normally Friday), so deliberately use the recent lookback.
+    now_ist = datetime.now(IST)
+    weekend = now_ist.weekday() >= 5
+    if weekend:
+        nse_date, closes = fetch_latest_nse_close(max_lookback_days=5, require_today=False)
+    else:
+        nse_date, closes = fetch_latest_nse_close(require_today=True)
+
     raw_recent = _download_raw_recent(list(data.keys()))
     target = pd.Timestamp(nse_date)
     updated = 0
