@@ -86,6 +86,13 @@ with main:
         with csv_action:
             st.download_button("Export CSV",show.to_csv(index=False).encode("utf-8"),"nifty_index_rs.csv","text/csv",use_container_width=True,key="index_csv",help="Download CSV")
 
+        audit_points = stats.get("audit_points", [])
+        if audit_points:
+            with st.expander("RS calculation audit", expanded=False):
+                audit_df = pd.DataFrame(audit_points)
+                st.dataframe(audit_df, use_container_width=True, hide_index=True)
+                st.caption("Audit sample only: TradingView bar dates/closes used for 63 / 126 / 189 / 252-point RS calculations. No production calculation is changed by this diagnostic.")
+
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} indices · sorted by RS</div>',unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>Strong 80–99 <span class="dot" style="background:#f3b94b"></span>Middle 50–79 <span class="dot" style="background:#ff6673"></span>Weak 1–49</div>',unsafe_allow_html=True)
         st.markdown('<div class="footer">TradingView daily bars · 63 / 126 / 189 / 252 trading bars · weighted 40% / 20% / 20% / 20% · Pine-compatible 1–99 ranking.</div>',unsafe_allow_html=True)
