@@ -84,8 +84,6 @@ with main:
                     st.warning("⚠️ EOD Scan is unavailable while the NSE cash market is open (09:15–15:30 IST).")
                     scan_mode = None
             except Exception:
-                # Let the NSE-backed engine make the final decision if the
-                # market-status endpoint is temporarily unavailable.
                 pass
 
     if scan_mode:
@@ -124,3 +122,56 @@ with main:
     else:
         stats = st.session_state.get("stock_stats", {})
         matches = len(df)
+        near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0
+        strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
+        stale_count = stats.get("stale_data_count", 0)
+        date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
+        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
+        if stale_count:
+            distribution = stats.get("date_distribution", {})
+            if distribution:
+                with st.expander("Latest date distribution", expanded=False):
+                    for date, count in list(distribution.items())[:10]:
+                        st.write(f"**{date}** — {count:,}")
+                    stale_symbols = stats.get("stale_data_symbols", [])
+                    if stale_symbols:
+                        st.caption("Stale symbols")
+                        st.write(", ".join(stale_symbols))
+                        if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
+                            with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
+                                st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
+                        source_df = st.session_state.get("source_check")
+                        if source_df is not None:
+                            st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
+                            st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
+        st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
+        search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
+        view = df.copy()
+        if search:
+            q = search.strip()
+            view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
+        display_cols = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "TradingView"]
+        shown = view[[c for c in display_cols if c in view.columns]].copy()
+        shown.insert(0, "S.No", range(1, len(shown) + 1))
+        all_columns = list(shown.columns)
+        saved_columns = st.session_state.get("stock_columns", all_columns)
+        saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
+        shown_for_table = shown[saved_columns]
+        def stock_style(row):
+            styles = [""] * len(row)
+            if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
+                score = float(row["RS Rating"])
+                fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
+                styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
+            return styles
+        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Index": st.column_config.TextColumn("INDEX", width="large"), "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("DISTANCE FROM 52W HIGH", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
+        eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
+        with eye_action:
+            with st.popover(":material/visibility:", use_container_width=True):
+                st.caption("Columns")
+                st.multiselect("Show columns", all_columns, default=saved_columns, label_visibility="collapsed", key="stock_columns")
+        with csv_action:
+            st.download_button("Export CSV", shown_for_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", use_container_width=True, key="stock_csv", help="Download CSV")
+        st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
+        st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filters are optional. Minervini MA trend checks price above 50 / 150 / 200 DMA; MA rising checks can be enabled separately. Index membership and Industry are informational metadata and are not used in scan calculations.</div>', unsafe_allow_html=True)
