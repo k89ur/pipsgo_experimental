@@ -59,7 +59,7 @@ with main:
         elif filter_mode=="Middle · 50–79": view=view[(view["RS 1-99"]>=50)&(view["RS 1-99"]<80)]
         elif filter_mode=="Weak · <50": view=view[(view["RS 1-99"]<50)&view["RS 1-99"].notna()]
         elif filter_mode=="Unavailable": view=view[view["RS 1-99"].isna()]
-        show=view[["Rank","INDEX","RS 1-99","Raw RS","3M %","6M %","9M %","12M %","LTP","Latest Date","Status"]].copy(); show["Rank"]=show["Rank"].astype(int)
+        show=view[["Rank","INDEX","RS 1-99","Raw RS","3M %","6M %","9M %","12M %","LTP","Bars","First Date","Latest Date","Status"]].copy(); show["Rank"]=show["Rank"].astype(int)
         show.insert(2,"Strength",show["RS 1-99"].map(lambda s:"N/A" if pd.isna(s) else ("Strong" if s>=80 else ("Middle" if s>=50 else "Weak"))))
         def style(row):
             styles=[""]*len(row); score=row["RS 1-99"]; si=row.index.get_loc("Strength"); ri=row.index.get_loc("RS 1-99")
@@ -76,7 +76,7 @@ with main:
         shown_for_table = show[saved_columns]
 
         st.dataframe(shown_for_table.style.apply(style,axis=1),use_container_width=True,hide_index=True,height=min(700,95+max(len(shown_for_table),1)*36),column_config={
-            "Rank":st.column_config.NumberColumn("#",width="small"),"INDEX":st.column_config.TextColumn("INDEX",width="medium"),"Strength":st.column_config.TextColumn("STRENGTH",width="small"),"RS 1-99":st.column_config.NumberColumn("RS",format="%d",width="small"),"Raw RS":st.column_config.NumberColumn("RAW RS",format="%.2f",width="small"),"3M %":st.column_config.NumberColumn("3M",format="%.2f"),"6M %":st.column_config.NumberColumn("6M",format="%.2f"),"9M %":st.column_config.NumberColumn("9M",format="%.2f"),"12M %":st.column_config.NumberColumn("12M",format="%.2f"),"LTP":st.column_config.NumberColumn("LTP",format="%.2f"),"Latest Date":st.column_config.DateColumn("LATEST DATE",format="DD MMM YYYY",width="medium"),"Status":st.column_config.TextColumn("STATUS",width="small"),"TradingView":st.column_config.LinkColumn("CHART",display_text="Open ↗",width="small")})
+            "Rank":st.column_config.NumberColumn("#",width="small"),"INDEX":st.column_config.TextColumn("INDEX",width="medium"),"Strength":st.column_config.TextColumn("STRENGTH",width="small"),"RS 1-99":st.column_config.NumberColumn("RS",format="%d",width="small"),"Raw RS":st.column_config.NumberColumn("RAW RS",format="%.2f",width="small"),"3M %":st.column_config.NumberColumn("3M",format="%.2f"),"6M %":st.column_config.NumberColumn("6M",format="%.2f"),"9M %":st.column_config.NumberColumn("9M",format="%.2f"),"12M %":st.column_config.NumberColumn("12M",format="%.2f"),"LTP":st.column_config.NumberColumn("LTP",format="%.2f"),"Bars":st.column_config.NumberColumn("BARS",format="%d",width="small"),"First Date":st.column_config.DateColumn("FIRST DATE",format="DD MMM YYYY",width="medium"),"Latest Date":st.column_config.DateColumn("LATEST DATE",format="DD MMM YYYY",width="medium"),"Status":st.column_config.TextColumn("STATUS",width="small"),"TradingView":st.column_config.LinkColumn("CHART",display_text="Open ↗",width="small")})
 
         eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
         with eye_action:
