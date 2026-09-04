@@ -14,7 +14,9 @@ NSE_BHAVCOPY_URLS = (
     "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
 )
 NSE_HOME = "https://www.nseindia.com/"
+NSE_MARKET_STATUS_URL = "https://www.nseindia.com/api/marketStatus"
 IST = ZoneInfo("Asia/Kolkata")
+EQUITY_OPEN_TIME = (9, 15)
 EQUITY_CLOSE_TIME = (15, 30)
 EQUITY_SERIES = {"EQ", "BE"}
 HEADERS = {
@@ -43,6 +45,56 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
     if not required.issubset(df.columns):
         raise ValueError(f"NSE bhavcopy missing columns: {sorted(required - set(df.columns))}")
     return df
+
+
+def _fetch_nse_market_status() -> dict:
+    """Return NSE capital-market status from the official market-status endpoint."""
+    session = _make_session()
+    response = session.get(NSE_MARKET_STATUS_URL, timeout=12)
+    response.raise_for_status()
+    payload = response.json()
+    for state in payload.get("marketState", []):
+        if str(state.get("market", "")).strip().lower() == "capital market":
+            return state
+    raise RuntimeError("NSE capital-market status was not returned")
+
+
+def eod_scan_market_open() -> bool:
+    """Return True only when the NSE cash market is actually open during regular hours."""
+    now = datetime.now(IST)
+    if now.weekday() >= 5 or not (EQUITY_OPEN_TIME <= (now.hour, now.minute) < EQUITY_CLOSE_TIME):
+        return False
+    state = _fetch_nse_market_status()
+    status = str(state.get("marketStatus", "")).strip().lower()
+    return status in {"open", "pre-open", "pre open"}
+
+
+def _eod_source_mode() -> str:
+    """Choose today's completed session or the latest prior session for an EOD scan.
+
+    Before 09:15, the latest completed session is used. During regular market hours,
+    an actual open NSE market blocks EOD scans. After 15:30, today's session is used
+    only when NSE reports that today's capital-market session occurred. Weekends and
+    exchange holidays therefore naturally resolve to the latest completed session.
+    """
+    now = datetime.now(IST)
+    clock = (now.hour, now.minute)
+
+    if clock < EQUITY_OPEN_TIME:
+        return "previous"
+
+    state = _fetch_nse_market_status()
+    status = str(state.get("marketStatus", "")).strip().lower()
+    if EQUITY_OPEN_TIME <= clock < EQUITY_CLOSE_TIME:
+        if status in {"open", "pre-open", "pre open"}:
+            raise RuntimeError("EOD Scan is unavailable while the NSE cash market is open (09:15–15:30 IST).")
+        return "previous"
+
+    trade_date_raw = str(state.get("tradeDate", "")).strip()
+    trade_date = pd.to_datetime(trade_date_raw, errors="coerce")
+    if pd.notna(trade_date) and trade_date.date() == now.date():
+        return "today"
+    return "previous"
 
 
 def _fetch_nse_bhavcopy(
@@ -308,15 +360,11 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     if not data or str(snapshot.get("mode", "eod")).lower() != "eod": return snapshot
     if progress_callback: progress_callback(0, 1, "Loading latest NSE bhavcopy")
 
-    # On a normal weekday after the close, require today's NSE EOD report.
-    # On Saturday/Sunday, the newest available bhavcopy is the prior trading
-    # session (normally Friday), so deliberately use the recent lookback.
-    now_ist = datetime.now(IST)
-    weekend = now_ist.weekday() >= 5
-    if weekend:
-        nse_date, closes = fetch_latest_nse_close(max_lookback_days=5, require_today=False)
-    else:
+    mode = _eod_source_mode()
+    if mode == "today":
         nse_date, closes = fetch_latest_nse_close(require_today=True)
+    else:
+        nse_date, closes = fetch_latest_nse_close(max_lookback_days=10, require_today=False)
 
     raw_recent = _download_raw_recent(list(data.keys()))
     target = pd.Timestamp(nse_date)
