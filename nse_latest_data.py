@@ -1,57 +1,73 @@
 from __future__ import annotations
 
 import io
-import zipfile
 from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
 import yfinance as yf
 
-NSE_BHAVCOPY_URL = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip"
+NSE_BHAVCOPY_URLS = (
+    "https://archives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
+    "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
+)
+NSE_HOME = "https://www.nseindia.com/"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept": "application/zip,application/octet-stream,*/*",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
+    "Accept": "text/csv,application/octet-stream,text/html;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": NSE_HOME,
+    "Connection": "keep-alive",
 }
 
 
+def _make_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    try:
+        session.get(NSE_HOME, timeout=8)
+    except Exception:
+        pass
+    return session
+
+
 def _read_bhavcopy(content: bytes) -> pd.DataFrame:
-    with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        csv_files = [name for name in archive.namelist() if name.lower().endswith(".csv")]
-        if not csv_files:
-            raise ValueError("NSE bhavcopy ZIP contains no CSV")
-        with archive.open(csv_files[0]) as handle:
-            df = pd.read_csv(handle)
+    df = pd.read_csv(io.BytesIO(content))
     df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
-    required = {"TckrSymb", "SctySrs", "ClsPric", "TradDt"}
+    required = {"SYMBOL", "SERIES", "DATE1", "CLOSE_PRICE"}
     if not required.issubset(df.columns):
         raise ValueError(f"NSE bhavcopy missing columns: {sorted(required - set(df.columns))}")
     return df
 
 
-def fetch_latest_nse_close(max_lookback_days: int = 7) -> tuple[str, dict[str, float]]:
+def fetch_latest_nse_close(max_lookback_days: int = 5) -> tuple[str, dict[str, float]]:
     """Return the newest available NSE cash-market EQ close map."""
     today = datetime.now().date()
+    session = _make_session()
     last_error = None
     for offset in range(max_lookback_days + 1):
         day = today - timedelta(days=offset)
-        date_str = day.strftime("%Y%m%d")
-        try:
-            response = requests.get(NSE_BHAVCOPY_URL.format(date=date_str), headers=HEADERS, timeout=20)
-            response.raise_for_status()
-            df = _read_bhavcopy(response.content)
-            df["SctySrs"] = df["SctySrs"].astype(str).str.strip().str.upper()
-            df = df[df["SctySrs"].eq("EQ")].copy()
-            df["TckrSymb"] = df["TckrSymb"].astype(str).str.strip().str.upper()
-            df["ClsPric"] = pd.to_numeric(df["ClsPric"], errors="coerce")
-            df = df.dropna(subset=["TckrSymb", "ClsPric"])
-            df = df[df["ClsPric"] > 0].drop_duplicates("TckrSymb", keep="last")
-            if not df.empty:
-                actual_date = pd.to_datetime(df["TradDt"].iloc[0], errors="coerce")
-                if pd.notna(actual_date):
-                    return actual_date.date().isoformat(), dict(zip(df["TckrSymb"], df["ClsPric"].astype(float)))
-        except Exception as exc:
-            last_error = exc
+        date_str = day.strftime("%d%m%Y")
+        for template in NSE_BHAVCOPY_URLS:
+            url = template.format(date=date_str)
+            try:
+                response = session.get(url, timeout=12)
+                response.raise_for_status()
+                if not response.content or response.content.lstrip().startswith(b"<"):
+                    raise ValueError("NSE returned non-CSV content")
+                df = _read_bhavcopy(response.content)
+                df["SERIES"] = df["SERIES"].astype(str).str.strip().str.upper()
+                df = df[df["SERIES"].eq("EQ")].copy()
+                df["SYMBOL"] = df["SYMBOL"].astype(str).str.strip().str.upper()
+                df["CLOSE_PRICE"] = pd.to_numeric(df["CLOSE_PRICE"], errors="coerce")
+                df = df.dropna(subset=["SYMBOL", "CLOSE_PRICE"])
+                df = df[df["CLOSE_PRICE"] > 0].drop_duplicates("SYMBOL", keep="last")
+                if not df.empty:
+                    actual_date = pd.to_datetime(df["DATE1"].iloc[0], errors="coerce")
+                    if pd.notna(actual_date):
+                        return actual_date.date().isoformat(), dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
+            except Exception as exc:
+                last_error = exc
     raise RuntimeError(f"Unable to retrieve a recent NSE bhavcopy: {last_error}")
 
 
@@ -144,7 +160,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["nse_data_date"] = nse_date
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
-    snapshot["nse_source"] = "NSE UDiFF CM Bhavcopy"
+    snapshot["nse_source"] = "NSE official CM bhavcopy"
     if progress_callback:
         progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
     return snapshot
@@ -152,6 +168,9 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
 
 def install_nse_latest_close(engine_module) -> None:
     """Patch the scanner download boundary without changing its RS/technical logic."""
+    if getattr(engine_module, "_nse_latest_close_installed", False):
+        return
+
     original_download_universe = engine_module._download_universe
     original_download_batch = engine_module._download_batch
 
@@ -171,3 +190,4 @@ def install_nse_latest_close(engine_module) -> None:
         return patch_snapshot(snapshot, kwargs.get("progress_callback"))
 
     engine_module._download_universe = wrapped_download_universe
+    engine_module._nse_latest_close_installed = True
