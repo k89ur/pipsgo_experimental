@@ -19,6 +19,7 @@ IST = ZoneInfo("Asia/Kolkata")
 EQUITY_OPEN_TIME = (9, 15)
 EQUITY_CLOSE_TIME = (15, 30)
 EQUITY_SERIES = {"EQ", "BE"}
+NSE_OPEN_STATUSES = {"open", "pre-open", "pre open"}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
     "Accept": "text/csv,application/octet-stream,text/html;q=0.9,*/*;q=0.8",
@@ -60,34 +61,34 @@ def _fetch_nse_market_status() -> dict:
 
 
 def eod_scan_market_open() -> bool:
-    """Return True only when the NSE cash market is actually open during regular hours."""
-    now = datetime.now(IST)
-    if now.weekday() >= 5 or not (EQUITY_OPEN_TIME <= (now.hour, now.minute) < EQUITY_CLOSE_TIME):
-        return False
+    """Return True when NSE reports the capital-market session is open/pre-open.
+
+    This deliberately does not assume weekdays or fixed hours so exchange holidays,
+    weekend trading, Muhurat and other special sessions are handled by NSE status.
+    """
     state = _fetch_nse_market_status()
     status = str(state.get("marketStatus", "")).strip().lower()
-    return status in {"open", "pre-open", "pre open"}
+    return status in NSE_OPEN_STATUSES
 
 
 def _eod_source_mode() -> str:
-    """Choose today's completed session or the latest prior session for an EOD scan.
+    """Choose today's completed session or the latest prior completed session.
 
-    Before 09:15, the latest completed session is used. During regular market hours,
-    an actual open NSE market blocks EOD scans. After 15:30, today's session is used
-    only when NSE reports that today's capital-market session occurred. Weekends and
-    exchange holidays therefore naturally resolve to the latest completed session.
+    The NSE market-status endpoint is authoritative for whether a Capital Market
+    session is currently running. If it is open/pre-open, EOD is blocked. When closed,
+    tradeDate identifies whether a session occurred today; otherwise the latest prior
+    bhavcopy is used. Before the normal 09:15 market open, the prior completed session
+    is used when NSE reports the market as closed.
     """
     now = datetime.now(IST)
-    clock = (now.hour, now.minute)
-
-    if clock < EQUITY_OPEN_TIME:
-        return "previous"
-
     state = _fetch_nse_market_status()
     status = str(state.get("marketStatus", "")).strip().lower()
-    if EQUITY_OPEN_TIME <= clock < EQUITY_CLOSE_TIME:
-        if status in {"open", "pre-open", "pre open"}:
-            raise RuntimeError("EOD Scan is unavailable while the NSE cash market is open (09:15–15:30 IST).")
+
+    if status in NSE_OPEN_STATUSES:
+        raise RuntimeError("EOD Scan is unavailable while the NSE Capital Market session is running.")
+
+    clock = (now.hour, now.minute)
+    if clock < EQUITY_OPEN_TIME:
         return "previous"
 
     trade_date_raw = str(state.get("tradeDate", "")).strip()
@@ -105,8 +106,6 @@ def _fetch_nse_bhavcopy(
     """Return the newest NSE bhavcopy rows, optionally limited to supported equity series."""
     now = datetime.now(IST)
     today = now.date()
-    if require_today and (now.hour, now.minute) < EQUITY_CLOSE_TIME:
-        raise RuntimeError("Today's NSE EOD data is not available before 15:30 IST.")
 
     session = _make_session()
     last_error = None
