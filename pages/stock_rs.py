@@ -44,7 +44,6 @@ with side:
 with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">Scan settings</div>', unsafe_allow_html=True)
-
         c1, c2, c3 = st.columns(3, gap="medium")
         with c1:
             use_min_rs = st.checkbox("Minimum RS", value=True, key="stock_use_min_rs")
@@ -55,7 +54,6 @@ with main:
         with c3:
             use_min_price = st.checkbox("Minimum price", value=True, key="stock_use_min_price")
             min_price = st.number_input("Minimum LTP (₹)", min_value=1.0, value=100.0, step=10.0, key="stock_min_price", disabled=not use_min_price)
-
         st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
         t1, t2 = st.columns(2, gap="medium")
         with t1:
@@ -63,7 +61,6 @@ with main:
         with t2:
             use_ma_rising = st.checkbox("MA rising", value=False, key="stock_use_ma_rising")
             rising_days = st.slider("Rising days", 5, 40, 20, key="stock_rising_days", disabled=not use_ma_rising)
-
         st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
         scan1, scan2, refresh = st.columns([1.45, 1.45, 1.55], gap="small")
         with scan1:
@@ -91,12 +88,7 @@ with main:
                 pct = min(done / max(total, 1), 1.0)
                 progress.progress(pct, text=f"{message} · {done:,}/{total:,}")
                 stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Progress</div><div class='rstat-value'>{pct*100:.0f}%</div></div><div class='rstat'><div class='rstat-label'>Processed</div><div class='rstat-value'>{done:,} / {total:,}</div></div>", unsafe_allow_html=True)
-            result, stats = run_scan(
-                min_rs=min_rs, near_high_pct=near_high, min_price=min_price, rising_days=rising_days,
-                use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price,
-                use_ma_rising=use_ma_rising, use_minervini=use_minervini, batch_size=DEFAULT_BATCH_SIZE,
-                snapshot_mode=scan_mode, progress_callback=stock_update,
-            )
+            result, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, rising_days=rising_days, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price, use_ma_rising=use_ma_rising, use_minervini=use_minervini, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=scan_mode, progress_callback=stock_update)
             st.session_state.stock_result = result
             st.session_state.stock_stats = stats
             progress.progress(1.0, text=f"{scan_mode.upper()} scan complete")
@@ -109,8 +101,10 @@ with main:
                     with st.expander("Latest date distribution", expanded=False):
                         for date, count in list(distribution.items())[:10]:
                             st.write(f"**{date}** — {count:,}")
-                        if len(distribution) > 10:
-                            st.caption(f"Showing 10 of {len(distribution)} dates")
+                        stale_symbols = stats.get("stale_data_symbols", [])
+                        if stale_symbols:
+                            st.caption("Stale symbols")
+                            st.write(", ".join(stale_symbols))
         except Exception as e:
             progress.empty()
             status_slot.error("Scan failed")
@@ -133,8 +127,10 @@ with main:
                 with st.expander("Latest date distribution", expanded=False):
                     for date, count in list(distribution.items())[:10]:
                         st.write(f"**{date}** — {count:,}")
-                    if len(distribution) > 10:
-                        st.caption(f"Showing 10 of {len(distribution)} dates")
+                    stale_symbols = stats.get("stale_data_symbols", [])
+                    if stale_symbols:
+                        st.caption("Stale symbols")
+                        st.write(", ".join(stale_symbols))
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
@@ -155,10 +151,7 @@ with main:
                 fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
-        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={
-            "S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Index": st.column_config.TextColumn("INDEX", width="large"), "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
-            "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("DISTANCE FROM 52W HIGH", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
-        })
+        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL", width="medium"), "Index": st.column_config.TextColumn("INDEX", width="large"), "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("DISTANCE FROM 52W HIGH", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
         eye_action, csv_action, action_spacer = st.columns([0.8, 1.8, 7.4])
         with eye_action:
             with st.popover(":material/visibility:", use_container_width=True):
