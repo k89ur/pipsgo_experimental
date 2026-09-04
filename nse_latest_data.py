@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -12,6 +13,8 @@ NSE_BHAVCOPY_URLS = (
     "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
 )
 NSE_HOME = "https://www.nseindia.com/"
+IST = ZoneInfo("Asia/Kolkata")
+EQUITY_CLOSE_TIME = (15, 30)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
     "Accept": "text/csv,application/octet-stream,text/html;q=0.9,*/*;q=0.8",
@@ -40,12 +43,18 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
     return df
 
 
-def fetch_latest_nse_close(max_lookback_days: int = 5) -> tuple[str, dict[str, float]]:
+def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
     """Return the newest available NSE cash-market EQ close map."""
-    today = datetime.now().date()
+    now = datetime.now(IST)
+    today = now.date()
+    if require_today and (now.hour, now.minute) < EQUITY_CLOSE_TIME:
+        raise RuntimeError("Today's NSE EOD data is not available before 15:30 IST.")
+
     session = _make_session()
     last_error = None
-    for offset in range(max_lookback_days + 1):
+    start_offset = 0 if require_today else 0
+    end_offset = 0 if require_today else max_lookback_days
+    for offset in range(start_offset, end_offset + 1):
         day = today - timedelta(days=offset)
         date_str = day.strftime("%d%m%Y")
         for template in NSE_BHAVCOPY_URLS:
@@ -65,9 +74,14 @@ def fetch_latest_nse_close(max_lookback_days: int = 5) -> tuple[str, dict[str, f
                 if not df.empty:
                     actual_date = pd.to_datetime(df["DATE1"].iloc[0], errors="coerce")
                     if pd.notna(actual_date):
-                        return actual_date.date().isoformat(), dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
+                        actual_day = actual_date.date()
+                        if require_today and actual_day != today:
+                            raise ValueError(f"NSE returned bhavcopy dated {actual_day}, expected {today}")
+                        return actual_day.isoformat(), dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
             except Exception as exc:
                 last_error = exc
+    if require_today:
+        raise RuntimeError(f"Today's NSE EOD bhavcopy is not available yet: {last_error}")
     raise RuntimeError(f"Unable to retrieve a recent NSE bhavcopy: {last_error}")
 
 
@@ -120,9 +134,11 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     data = snapshot.get("data", {})
     if not data:
         return snapshot
+    mode = str(snapshot.get("mode", "eod")).lower()
+    require_today = mode == "eod"
     if progress_callback:
         progress_callback(0, 1, "Loading latest NSE bhavcopy")
-    nse_date, closes = fetch_latest_nse_close()
+    nse_date, closes = fetch_latest_nse_close(require_today=require_today)
     raw_recent = _download_raw_recent(list(data.keys()))
     target = pd.Timestamp(nse_date)
     updated = 0
@@ -176,8 +192,6 @@ def install_nse_latest_close(engine_module) -> None:
 
     def wrapped_download_universe(*args, **kwargs):
         def guarded_download_batch(symbols, retries=3, threads=True, period="2y"):
-            # Skip the old Yahoo-only stale recovery; NSE is now the authoritative
-            # latest-close source. Normal 2-year downloads and missing-symbol recovery remain unchanged.
             if period != "2y":
                 return {}
             return original_download_batch(symbols, retries=retries, threads=threads, period=period)
