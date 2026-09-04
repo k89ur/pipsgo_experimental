@@ -52,9 +52,8 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
 
     session = _make_session()
     last_error = None
-    start_offset = 0 if require_today else 0
     end_offset = 0 if require_today else max_lookback_days
-    for offset in range(start_offset, end_offset + 1):
+    for offset in range(0, end_offset + 1):
         day = today - timedelta(days=offset)
         date_str = day.strftime("%d%m%Y")
         for template in NSE_BHAVCOPY_URLS:
@@ -130,15 +129,13 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
-    """Overlay the official NSE close while preserving Yahoo adjusted-price scale."""
+    """Overlay the official NSE close for EOD scans while preserving Yahoo adjusted-price scale."""
     data = snapshot.get("data", {})
-    if not data:
+    if not data or str(snapshot.get("mode", "eod")).lower() != "eod":
         return snapshot
-    mode = str(snapshot.get("mode", "eod")).lower()
-    require_today = mode == "eod"
     if progress_callback:
         progress_callback(0, 1, "Loading latest NSE bhavcopy")
-    nse_date, closes = fetch_latest_nse_close(require_today=require_today)
+    nse_date, closes = fetch_latest_nse_close(require_today=True)
     raw_recent = _download_raw_recent(list(data.keys()))
     target = pd.Timestamp(nse_date)
     updated = 0
