@@ -48,7 +48,7 @@ with main:
             for _, row in top.iterrows():
                 score=int(row["RS 1-99"]); cls="score-strong" if score>=80 else ("score-mid" if score>=50 else "score-weak")
                 cards.append(f"<div class='leader'><div class='leader-top'><span class='leader-rank'>#{int(row['Rank']):02d}</span><span class='leader-score {cls}'>{score}</span></div><div class='leader-name'>{row['INDEX']}</div><div class='help'>Raw RS {row['Raw RS']:.2f}</div></div>")
-            st.markdown('<div class="leader-grid">'+''.join(cards)+'</div>', unsafe_allow_html=True)
+            st.markdown('<div class="leader-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search_col, filter_col = st.columns([2.8, 1.7])
         with search_col: search=st.text_input("Search",placeholder="Search index…",label_visibility="collapsed",key="index_search")
@@ -91,6 +91,7 @@ with main:
             with st.expander("RS calculation audit", expanded=False):
                 audit_df = pd.DataFrame(audit_points)
                 st.dataframe(audit_df, use_container_width=True, hide_index=True)
+                st.download_button("Export RS Audit CSV",audit_df.to_csv(index=False).encode("utf-8"),"index_rs_calculation_audit.csv","text/csv",use_container_width=True,key="index_audit_csv",help="Download the standalone RS calculation audit")
                 st.caption("Audit sample only: TradingView bar dates/closes used for 63 / 126 / 189 / 252-point RS calculations. No production calculation is changed by this diagnostic.")
 
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} indices · sorted by RS</div>',unsafe_allow_html=True)
