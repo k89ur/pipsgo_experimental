@@ -91,38 +91,31 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
         group = symbols[start:start + 100]
         try:
             raw = yf.download(
-                tickers=[f"{s}.NS" for s in group],
-                period="10d",
-                interval="1d",
-                auto_adjust=False,
-                progress=False,
-                group_by="ticker",
-                threads=True,
+                tickers=[f"{s}.NS" for s in group], period="10d", interval="1d",
+                auto_adjust=False, progress=False, group_by="ticker", threads=True,
             )
             if raw is None or raw.empty:
                 continue
-            if isinstance(raw.columns, pd.MultiIndex):
-                level0 = set(raw.columns.get_level_values(0))
-                level1 = set(raw.columns.get_level_values(1))
-                for symbol in group:
-                    ticker = f"{symbol}.NS"
-                    try:
-                        if ticker in level0:
-                            x = raw[ticker].copy()
-                        elif ticker in level1:
-                            x = raw.xs(ticker, axis=1, level=1).copy()
-                        else:
-                            continue
-                        if "Close" not in x.columns:
-                            continue
-                        x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
-                        x = x[~x.index.isna()].sort_index()
-                        x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
-                        x = x.dropna(subset=["Close"])
-                        if not x.empty:
-                            result[symbol] = x
-                    except Exception:
-                        continue
+            level0 = set(raw.columns.get_level_values(0)) if isinstance(raw.columns, pd.MultiIndex) else set()
+            level1 = set(raw.columns.get_level_values(1)) if isinstance(raw.columns, pd.MultiIndex) else set()
+            for symbol in group:
+                ticker = f"{symbol}.NS"
+                try:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        if ticker in level0: x = raw[ticker].copy()
+                        elif ticker in level1: x = raw.xs(ticker, axis=1, level=1).copy()
+                        else: continue
+                    else:
+                        if len(group) != 1 or "Close" not in raw.columns: continue
+                        x = raw.copy()
+                    if "Close" not in x.columns: continue
+                    x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
+                    x = x[~x.index.isna()].sort_index()
+                    x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
+                    x = x.dropna(subset=["Close"])
+                    if not x.empty: result[symbol] = x
+                except Exception:
+                    continue
         except Exception:
             continue
     return result
@@ -135,40 +128,28 @@ def _download_yahoo_2y(symbols: list[str]) -> dict[str, pd.DataFrame]:
         group = symbols[start:start + 100]
         try:
             raw = yf.download(
-                tickers=[f"{s}.NS" for s in group],
-                period="2y",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                group_by="ticker",
-                threads=True,
+                tickers=[f"{s}.NS" for s in group], period="2y", interval="1d",
+                auto_adjust=True, progress=False, group_by="ticker", threads=True,
             )
-            if raw is None or raw.empty:
-                continue
+            if raw is None or raw.empty: continue
             level0 = set(raw.columns.get_level_values(0)) if isinstance(raw.columns, pd.MultiIndex) else set()
             level1 = set(raw.columns.get_level_values(1)) if isinstance(raw.columns, pd.MultiIndex) else set()
             for symbol in group:
                 ticker = f"{symbol}.NS"
                 try:
                     if isinstance(raw.columns, pd.MultiIndex):
-                        if ticker in level0:
-                            x = raw[ticker].copy()
-                        elif ticker in level1:
-                            x = raw.xs(ticker, axis=1, level=1).copy()
-                        else:
-                            continue
+                        if ticker in level0: x = raw[ticker].copy()
+                        elif ticker in level1: x = raw.xs(ticker, axis=1, level=1).copy()
+                        else: continue
                     else:
-                        if len(group) != 1 or "Close" not in raw.columns:
-                            continue
+                        if len(group) != 1 or "Close" not in raw.columns: continue
                         x = raw.copy()
-                    if "Close" not in x.columns:
-                        continue
+                    if "Close" not in x.columns: continue
                     x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
                     x = x[~x.index.isna()].sort_index()
                     x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
                     x = x.dropna(subset=["Close"])
-                    if not x.empty:
-                        result[symbol] = x
+                    if not x.empty: result[symbol] = x
                 except Exception:
                     continue
         except Exception:
@@ -180,11 +161,8 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
     """Compare scanner Yahoo 2Y data, fresh Yahoo 10D data and NSE closes.
 
     Diagnostic only: this function never changes the scanner snapshot or RS results.
-    If the caller does not provide the cached scanner snapshot, a fresh Yahoo 2Y
-    diagnostic download is used so the comparison remains informative.
     """
-    symbols = [str(s).strip().upper() for s in symbols if str(s).strip()]
-    symbols = list(dict.fromkeys(symbols))
+    symbols = list(dict.fromkeys(str(s).strip().upper() for s in symbols if str(s).strip()))
     recent = _download_raw_recent(symbols)
     data = snapshot.get("data", {}) if isinstance(snapshot, dict) else {}
     fallback_2y = _download_yahoo_2y(symbols) if not data else {}
@@ -197,7 +175,9 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
 
     rows = []
     for symbol in symbols:
-        frame = data.get(symbol) or fallback_2y.get(symbol)
+        frame = data.get(symbol)
+        if frame is None or frame.empty:
+            frame = fallback_2y.get(symbol)
         yahoo_2y_date = "—"
         yahoo_2y_close = None
         if frame is not None and not frame.empty and "Close" in frame.columns:
@@ -213,32 +193,22 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
         yahoo_10d_close = None
         recent_frame = recent.get(symbol)
         if recent_frame is not None and not recent_frame.empty:
-            y = recent_frame.sort_index()
-            if "Close" in y.columns and not y["Close"].dropna().empty:
-                y = y.dropna(subset=["Close"])
+            y = recent_frame.dropna(subset=["Close"]).sort_index()
+            if not y.empty:
                 yahoo_10d_date = y.index[-1].date().isoformat()
                 yahoo_10d_close = float(y["Close"].iloc[-1])
 
-        rows.append({
-            "Symbol": symbol,
-            "Yahoo 2Y Date": yahoo_2y_date,
-            "Yahoo 2Y Close": yahoo_2y_close,
-            "Yahoo 10D Date": yahoo_10d_date,
-            "Yahoo 10D Close": yahoo_10d_close,
-            "NSE Date": nse_date,
-            "NSE Close": nse_closes.get(symbol),
-            "NSE Error": nse_error,
-        })
+        rows.append({"Symbol": symbol, "Yahoo 2Y Date": yahoo_2y_date, "Yahoo 2Y Close": yahoo_2y_close,
+                     "Yahoo 10D Date": yahoo_10d_date, "Yahoo 10D Close": yahoo_10d_close,
+                     "NSE Date": nse_date, "NSE Close": nse_closes.get(symbol), "NSE Error": nse_error})
     return pd.DataFrame(rows)
 
 
 def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     """Overlay the official NSE close for EOD scans while preserving Yahoo adjusted-price scale."""
     data = snapshot.get("data", {})
-    if not data or str(snapshot.get("mode", "eod")).lower() != "eod":
-        return snapshot
-    if progress_callback:
-        progress_callback(0, 1, "Loading latest NSE bhavcopy")
+    if not data or str(snapshot.get("mode", "eod")).lower() != "eod": return snapshot
+    if progress_callback: progress_callback(0, 1, "Loading latest NSE bhavcopy")
     nse_date, closes = fetch_latest_nse_close(require_today=True)
     raw_recent = _download_raw_recent(list(data.keys()))
     target = pd.Timestamp(nse_date)
@@ -246,8 +216,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     factor_count = 0
     for symbol, frame in data.items():
         nse_close = closes.get(symbol)
-        if nse_close is None or frame is None or frame.empty:
-            continue
+        if nse_close is None or frame is None or frame.empty: continue
         raw = raw_recent.get(symbol)
         adjusted_factor = None
         if raw is not None and not raw.empty:
@@ -262,47 +231,34 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
                     factor_count += 1
         scaled_close = float(nse_close) * adjusted_factor if adjusted_factor is not None else float(nse_close)
         x = frame.copy()
-        if target in x.index:
-            x.loc[target, "Close"] = scaled_close
+        if target in x.index: x.loc[target, "Close"] = scaled_close
         else:
-            row = {column: float("nan") for column in x.columns}
-            row["Close"] = scaled_close
+            row = {column: float("nan") for column in x.columns}; row["Close"] = scaled_close
             x = pd.concat([x, pd.DataFrame([row], index=[target])])
         x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
-        x = x[~x.index.isna()].sort_index()
-        x = x[~x.index.duplicated(keep="last")]
-        data[symbol] = x
-        updated += 1
+        x = x[~x.index.isna()].sort_index(); x = x[~x.index.duplicated(keep="last")]
+        data[symbol] = x; updated += 1
     snapshot["data"] = data
     snapshot["nse_data_date"] = nse_date
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
-    if progress_callback:
-        progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
+    if progress_callback: progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
     return snapshot
 
 
 def install_nse_latest_close(engine_module) -> None:
     """Patch the scanner download boundary without changing its RS/technical logic."""
-    if getattr(engine_module, "_nse_latest_close_installed", False):
-        return
-
+    if getattr(engine_module, "_nse_latest_close_installed", False): return
     original_download_universe = engine_module._download_universe
     original_download_batch = engine_module._download_batch
-
     def wrapped_download_universe(*args, **kwargs):
         def guarded_download_batch(symbols, retries=3, threads=True, period="2y"):
-            if period != "2y":
-                return {}
+            if period != "2y": return {}
             return original_download_batch(symbols, retries=retries, threads=threads, period=period)
-
         engine_module._download_batch = guarded_download_batch
-        try:
-            snapshot = original_download_universe(*args, **kwargs)
-        finally:
-            engine_module._download_batch = original_download_batch
+        try: snapshot = original_download_universe(*args, **kwargs)
+        finally: engine_module._download_batch = original_download_batch
         return patch_snapshot(snapshot, kwargs.get("progress_callback"))
-
     engine_module._download_universe = wrapped_download_universe
     engine_module._nse_latest_close_installed = True
