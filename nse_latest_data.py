@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
+import streamlit as st
 import yfinance as yf
 
 NSE_BHAVCOPY_URLS = (
@@ -49,7 +50,6 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
 
 
 def _fetch_nse_market_status() -> dict:
-    """Return NSE capital-market status from the official market-status endpoint."""
     session = _make_session()
     response = session.get(NSE_MARKET_STATUS_URL, timeout=12)
     response.raise_for_status()
@@ -61,38 +61,20 @@ def _fetch_nse_market_status() -> dict:
 
 
 def eod_scan_market_open() -> bool:
-    """Return True when NSE reports the capital-market session is open/pre-open.
-
-    This deliberately does not assume weekdays or fixed hours so exchange holidays,
-    weekend trading, Muhurat and other special sessions are handled by NSE status.
-    """
     state = _fetch_nse_market_status()
     status = str(state.get("marketStatus", "")).strip().lower()
     return status in NSE_OPEN_STATUSES
 
 
 def _eod_source_mode() -> str:
-    """Choose today's completed session or the latest prior completed session.
-
-    The NSE market-status endpoint is authoritative for whether a Capital Market
-    session is currently running. If it is open/pre-open, EOD is blocked. When closed,
-    tradeDate identifies whether a session occurred today; otherwise the latest prior
-    bhavcopy is used. Before the normal 09:15 market open, the prior completed session
-    is used when NSE reports the market as closed.
-    """
     now = datetime.now(IST)
     state = _fetch_nse_market_status()
     status = str(state.get("marketStatus", "")).strip().lower()
-
     if status in NSE_OPEN_STATUSES:
         raise RuntimeError("EOD Scan is unavailable while the NSE Capital Market session is running.")
-
-    clock = (now.hour, now.minute)
-    if clock < EQUITY_OPEN_TIME:
+    if (now.hour, now.minute) < EQUITY_OPEN_TIME:
         return "previous"
-
-    trade_date_raw = str(state.get("tradeDate", "")).strip()
-    trade_date = pd.to_datetime(trade_date_raw, errors="coerce")
+    trade_date = pd.to_datetime(str(state.get("tradeDate", "")).strip(), errors="coerce")
     if pd.notna(trade_date) and trade_date.date() == now.date():
         return "today"
     return "previous"
@@ -103,10 +85,8 @@ def _fetch_nse_bhavcopy(
     require_today: bool = False,
     equity_only: bool = True,
 ) -> tuple[str, pd.DataFrame]:
-    """Return the newest NSE bhavcopy rows, optionally limited to supported equity series."""
     now = datetime.now(IST)
     today = now.date()
-
     session = _make_session()
     last_error = None
     end_offset = 0 if require_today else max_lookback_days
@@ -114,14 +94,12 @@ def _fetch_nse_bhavcopy(
         day = today - timedelta(days=offset)
         date_str = day.strftime("%d%m%Y")
         for template in NSE_BHAVCOPY_URLS:
-            url = template.format(date=date_str)
             try:
-                response = session.get(url, timeout=12)
+                response = session.get(template.format(date=date_str), timeout=12)
                 response.raise_for_status()
                 if not response.content or response.content.lstrip().startswith(b"<"):
                     raise ValueError("NSE returned non-CSV content")
                 df = _read_bhavcopy(response.content)
-                df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
                 df["SERIES"] = df["SERIES"].astype(str).str.strip().str.upper()
                 if equity_only:
                     df = df[df["SERIES"].isin(EQUITY_SERIES)].copy()
@@ -143,8 +121,12 @@ def _fetch_nse_bhavcopy(
     raise RuntimeError(f"Unable to retrieve a recent NSE bhavcopy: {last_error}")
 
 
-def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
-    """Return the newest available NSE cash-market equity close map."""
+@st.cache_data(show_spinner=False, persist="disk", max_entries=20)
+def _fetch_latest_nse_close_cached(
+    max_lookback_days: int,
+    require_today: bool,
+    cache_day: str,
+) -> tuple[str, dict[str, float]]:
     actual_date, df = _fetch_nse_bhavcopy(
         max_lookback_days=max_lookback_days,
         require_today=require_today,
@@ -153,8 +135,12 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
     return actual_date, dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
 
 
+def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
+    cache_day = datetime.now(IST).date().isoformat()
+    return _fetch_latest_nse_close_cached(max_lookback_days, require_today, cache_day)
+
+
 def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Download short unadjusted histories used only for source diagnostics and adjustment factors."""
     result: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 100):
         group = symbols[start:start + 100]
@@ -171,18 +157,24 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
                 ticker = f"{symbol}.NS"
                 try:
                     if isinstance(raw.columns, pd.MultiIndex):
-                        if ticker in level0: x = raw[ticker].copy()
-                        elif ticker in level1: x = raw.xs(ticker, axis=1, level=1).copy()
-                        else: continue
+                        if ticker in level0:
+                            x = raw[ticker].copy()
+                        elif ticker in level1:
+                            x = raw.xs(ticker, axis=1, level=1).copy()
+                        else:
+                            continue
                     else:
-                        if len(group) != 1 or "Close" not in raw.columns: continue
+                        if len(group) != 1 or "Close" not in raw.columns:
+                            continue
                         x = raw.copy()
-                    if "Close" not in x.columns: continue
+                    if "Close" not in x.columns:
+                        continue
                     x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
                     x = x[~x.index.isna()].sort_index()
                     x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
                     x = x.dropna(subset=["Close"])
-                    if not x.empty: result[symbol] = x
+                    if not x.empty:
+                        result[symbol] = x
                 except Exception:
                     continue
         except Exception:
@@ -191,7 +183,6 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _download_yahoo_2y(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Fresh Yahoo 2-year diagnostic download; never used by the scanner."""
     result: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 100):
         group = symbols[start:start + 100]
@@ -200,25 +191,32 @@ def _download_yahoo_2y(symbols: list[str]) -> dict[str, pd.DataFrame]:
                 tickers=[f"{s}.NS" for s in group], period="2y", interval="1d",
                 auto_adjust=True, progress=False, group_by="ticker", threads=True,
             )
-            if raw is None or raw.empty: continue
+            if raw is None or raw.empty:
+                continue
             level0 = set(raw.columns.get_level_values(0)) if isinstance(raw.columns, pd.MultiIndex) else set()
             level1 = set(raw.columns.get_level_values(1)) if isinstance(raw.columns, pd.MultiIndex) else set()
             for symbol in group:
                 ticker = f"{symbol}.NS"
                 try:
                     if isinstance(raw.columns, pd.MultiIndex):
-                        if ticker in level0: x = raw[ticker].copy()
-                        elif ticker in level1: x = raw.xs(ticker, axis=1, level=1).copy()
-                        else: continue
+                        if ticker in level0:
+                            x = raw[ticker].copy()
+                        elif ticker in level1:
+                            x = raw.xs(ticker, axis=1, level=1).copy()
+                        else:
+                            continue
                     else:
-                        if len(group) != 1 or "Close" not in raw.columns: continue
+                        if len(group) != 1 or "Close" not in raw.columns:
+                            continue
                         x = raw.copy()
-                    if "Close" not in x.columns: continue
+                    if "Close" not in x.columns:
+                        continue
                     x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
                     x = x[~x.index.isna()].sort_index()
                     x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
                     x = x.dropna(subset=["Close"])
-                    if not x.empty: result[symbol] = x
+                    if not x.empty:
+                        result[symbol] = x
                 except Exception:
                     continue
         except Exception:
@@ -227,10 +225,6 @@ def _download_yahoo_2y(symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
-    """Compare scanner Yahoo 2Y data, fresh Yahoo 10D data and NSE closes.
-
-    Diagnostic only: this function never changes the scanner snapshot or RS results.
-    """
     symbols = list(dict.fromkeys(str(s).strip().upper() for s in symbols if str(s).strip()))
     recent = _download_raw_recent(symbols)
     data = snapshot.get("data", {}) if isinstance(snapshot, dict) else {}
@@ -244,17 +238,12 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
         nse_lookup = {symbol: row for symbol, row in nse_rows.set_index("SYMBOL").iterrows()}
         nse_error = ""
     except Exception as exc:
-        nse_date, nse_closes = "—", {}
-        nse_lookup = {}
-        nse_error = str(exc)
+        nse_date, nse_closes, nse_lookup, nse_error = "—", {}, {}, str(exc)
 
     rows = []
     for symbol in symbols:
-        frame = data.get(symbol)
-        if frame is None or frame.empty:
-            frame = fallback_2y.get(symbol)
-        yahoo_2y_date = "—"
-        yahoo_2y_close = None
+        frame = data.get(symbol) or fallback_2y.get(symbol)
+        yahoo_2y_date, yahoo_2y_close = "—", None
         if frame is not None and not frame.empty and "Close" in frame.columns:
             x = frame.copy()
             x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
@@ -263,22 +252,14 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
             if not x.empty:
                 yahoo_2y_date = x.index[-1].date().isoformat()
                 yahoo_2y_close = float(x["Close"].iloc[-1])
-
-        yahoo_10d_date = "—"
-        yahoo_10d_close = None
+        yahoo_10d_date, yahoo_10d_close = "—", None
         recent_frame = recent.get(symbol)
         if recent_frame is not None and not recent_frame.empty:
             y = recent_frame.dropna(subset=["Close"]).sort_index()
             if not y.empty:
                 yahoo_10d_date = y.index[-1].date().isoformat()
                 yahoo_10d_close = float(y["Close"].iloc[-1])
-
         nse_row = nse_lookup.get(symbol)
-        nse_series = nse_row.get("SERIES") if nse_row is not None else None
-        nse_volume = nse_row.get("TTL_TRD_QTY") if nse_row is not None else None
-        nse_prev_close = nse_row.get("PREV_CLOSE") if nse_row is not None else None
-        nse_open = nse_row.get("OPEN_PRICE") if nse_row is not None else None
-
         rows.append({
             "Symbol": symbol,
             "Yahoo 2Y Date": yahoo_2y_date,
@@ -286,11 +267,11 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
             "Yahoo 10D Date": yahoo_10d_date,
             "Yahoo 10D Close": yahoo_10d_close,
             "NSE Date": nse_date,
-            "NSE Series": nse_series,
-            "NSE Prev Close": nse_prev_close,
-            "NSE Open": nse_open,
+            "NSE Series": nse_row.get("SERIES") if nse_row is not None else None,
+            "NSE Prev Close": nse_row.get("PREV_CLOSE") if nse_row is not None else None,
+            "NSE Open": nse_row.get("OPEN_PRICE") if nse_row is not None else None,
             "NSE Close": nse_closes.get(symbol),
-            "NSE Volume": nse_volume,
+            "NSE Volume": nse_row.get("TTL_TRD_QTY") if nse_row is not None else None,
             "NSE Row": "Present" if nse_row is not None else "Not Present",
             "NSE Error": nse_error,
         })
@@ -298,32 +279,27 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
 
 
 def _refresh_snapshot_diagnostics(snapshot: dict) -> None:
-    """Recompute snapshot integrity fields after the NSE EOD overlay."""
     data = snapshot.get("data", {})
-    latest_by_symbol: dict[str, str] = {}
+    latest_by_symbol = {}
     for symbol, frame in data.items():
         if frame is None or frame.empty:
             continue
         try:
-            latest = pd.Timestamp(frame.index[-1]).date().isoformat()
-            latest_by_symbol[symbol] = latest
+            latest_by_symbol[symbol] = pd.Timestamp(frame.index[-1]).date().isoformat()
         except Exception:
             continue
-
     dates = list(latest_by_symbol.values())
     if dates:
         counts = Counter(dates)
-        min_date = min(dates)
-        max_date = max(dates)
+        min_date, max_date = min(dates), max(dates)
         stale_symbols = sorted(symbol for symbol, date in latest_by_symbol.items() if date < max_date)
-        distribution = dict(sorted(counts.items(), key=lambda item: item[0], reverse=True))
         snapshot["data_date"] = max_date
         snapshot["min_data_date"] = min_date
         snapshot["max_data_date"] = max_date
         snapshot["date_consistent"] = min_date == max_date
         snapshot["stale_data_count"] = len(stale_symbols)
         snapshot["stale_data_symbols"] = stale_symbols
-        snapshot["date_distribution"] = distribution
+        snapshot["date_distribution"] = dict(sorted(counts.items(), key=lambda item: item[0], reverse=True))
     else:
         snapshot["data_date"] = "Unknown"
         snapshot["min_data_date"] = "Unknown"
@@ -354,12 +330,18 @@ def _refresh_snapshot_diagnostics(snapshot: dict) -> None:
 
 
 def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
-    """Overlay the official NSE close for EOD scans while preserving Yahoo adjusted-price scale."""
     data = snapshot.get("data", {})
-    if not data or str(snapshot.get("mode", "eod")).lower() != "eod": return snapshot
-    if progress_callback: progress_callback(0, 1, "Loading latest NSE bhavcopy")
+    if not data or str(snapshot.get("mode", "eod")).lower() != "eod":
+        return snapshot
 
     mode = _eod_source_mode()
+    if snapshot.get("nse_source_mode") == mode and snapshot.get("nse_data_date"):
+        if progress_callback:
+            progress_callback(1, 1, f"NSE latest close already applied · {snapshot['nse_data_date']}")
+        return snapshot
+
+    if progress_callback:
+        progress_callback(0, 1, "Loading latest NSE bhavcopy")
     if mode == "today":
         nse_date, closes = fetch_latest_nse_close(require_today=True)
     else:
@@ -371,7 +353,8 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     factor_count = 0
     for symbol, frame in data.items():
         nse_close = closes.get(symbol)
-        if nse_close is None or frame is None or frame.empty: continue
+        if nse_close is None or frame is None or frame.empty:
+            continue
         raw = raw_recent.get(symbol)
         adjusted_factor = None
         if raw is not None and not raw.empty:
@@ -386,35 +369,74 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
                     factor_count += 1
         scaled_close = float(nse_close) * adjusted_factor if adjusted_factor is not None else float(nse_close)
         x = frame.copy()
-        if target in x.index: x.loc[target, "Close"] = scaled_close
+        if target in x.index:
+            x.loc[target, "Close"] = scaled_close
         else:
-            row = {column: float("nan") for column in x.columns}; row["Close"] = scaled_close
+            row = {column: float("nan") for column in x.columns}
+            row["Close"] = scaled_close
             x = pd.concat([x, pd.DataFrame([row], index=[target])])
         x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
-        x = x[~x.index.isna()].sort_index(); x = x[~x.index.duplicated(keep="last")]
-        data[symbol] = x; updated += 1
+        x = x[~x.index.isna()].sort_index()
+        x = x[~x.index.duplicated(keep="last")]
+        data[symbol] = x
+        updated += 1
+
     snapshot["data"] = data
     snapshot["nse_data_date"] = nse_date
+    snapshot["nse_source_mode"] = mode
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
     _refresh_snapshot_diagnostics(snapshot)
-    if progress_callback: progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
+    if progress_callback:
+        progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
     return snapshot
 
 
+@st.cache_data(show_spinner=False, persist="disk", max_entries=200)
+def _cached_engine_batch(
+    symbols_tuple: tuple[str, ...],
+    period: str,
+    threads: bool,
+    cache_day: str,
+    _download_fn,
+) -> dict[str, pd.DataFrame]:
+    result = _download_fn(list(symbols_tuple), retries=3, threads=threads, period=period)
+    if len(result) < len(symbols_tuple):
+        raise RuntimeError("Incomplete batch; do not cache partial market data")
+    return result
+
+
 def install_nse_latest_close(engine_module) -> None:
-    """Patch the scanner download boundary without changing its RS/technical logic."""
-    if getattr(engine_module, "_nse_latest_close_installed", False): return
+    if getattr(engine_module, "_nse_latest_close_installed", False):
+        return
+
     original_download_universe = engine_module._download_universe
     original_download_batch = engine_module._download_batch
-    def wrapped_download_universe(*args, **kwargs):
-        def guarded_download_batch(symbols, retries=3, threads=True, period="2y"):
-            if period != "2y": return {}
+    original_clear_cache = engine_module.clear_stock_data_cache
+
+    def cached_download_batch(symbols, retries=3, threads=True, period="2y"):
+        cache_day = datetime.now(IST).date().isoformat()
+        try:
+            return _cached_engine_batch(
+                tuple(symbols), period, threads, cache_day, original_download_batch
+            )
+        except RuntimeError:
             return original_download_batch(symbols, retries=retries, threads=threads, period=period)
-        engine_module._download_batch = guarded_download_batch
-        try: snapshot = original_download_universe(*args, **kwargs)
-        finally: engine_module._download_batch = original_download_batch
+
+    def wrapped_download_universe(*args, **kwargs):
+        engine_module._download_batch = cached_download_batch
+        try:
+            snapshot = original_download_universe(*args, **kwargs)
+        finally:
+            engine_module._download_batch = original_download_batch
         return patch_snapshot(snapshot, kwargs.get("progress_callback"))
+
+    def clear_all_stock_data_cache():
+        original_clear_cache()
+        _cached_engine_batch.clear()
+        _fetch_latest_nse_close_cached.clear()
+
     engine_module._download_universe = wrapped_download_universe
+    engine_module.clear_stock_data_cache = clear_all_stock_data_cache
     engine_module._nse_latest_close_installed = True
