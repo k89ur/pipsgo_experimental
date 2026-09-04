@@ -27,6 +27,7 @@ BENCHMARK_SYMBOL = "NIFTY"
 EXCHANGE = "NSE"
 BARS = 500
 RETRY_BARS = 1000
+REQUIRED_BARS = 253
 
 
 def _empty_result() -> pd.Series:
@@ -100,9 +101,7 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
     if benchmark.empty:
         raise RuntimeError("TradingView did not return NIFTY 50 daily bars. The anonymous TradingView data session may be temporarily limited; try Refresh RS once.")
 
-    # Some TradingView index series expose fewer than 253 bars on the first request.
-    # Retry only those symbols with a deeper history request before declaring them unavailable.
-    retry_keys = [key for key, _ in targets if key != "__BENCHMARK__" and (results.get(key, _empty_result()).empty or len(results.get(key, _empty_result())) <= 252)]
+    retry_keys = [key for key, _ in targets if key != "__BENCHMARK__" and (results.get(key, _empty_result()).empty or len(results.get(key, _empty_result())) < REQUIRED_BARS)]
     if retry_keys:
         if progress_callback:
             progress_callback(len(targets), len(targets), f"Retrying {len(retry_keys)} incomplete index series")
@@ -122,8 +121,9 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
     for alias, symbol in INDEX_UNIVERSE:
         close = results.get(alias, _empty_result())
         if close.empty:
-            rows.append({"INDEX": alias, "TradingView": f"NSE:{symbol}", "Status": "Data unavailable", "Raw RS": np.nan, "Bars": 0, "Latest Date": pd.NaT})
+            rows.append({"INDEX": alias, "TradingView": f"NSE:{symbol}", "Status": "Data unavailable", "Raw RS": np.nan, "Bars": 0, "First Date": pd.NaT, "Latest Date": pd.NaT})
             continue
+        first_date = close.index[0]
         latest_date = close.index[-1]
         metrics = _pine_score(close, benchmark)
         if pd.isna(metrics["Raw RS"]):
@@ -133,7 +133,7 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
         else:
             status = "OK"
         rows.append({"INDEX": alias, "TradingView": f"NSE:{symbol}", "LTP": float(close.iloc[-1]), **metrics,
-                     "Bars": len(close), "Latest Date": latest_date, "Status": status})
+                     "Bars": len(close), "First Date": first_date, "Latest Date": latest_date, "Status": status})
 
     df = pd.DataFrame(rows)
     scores = df["Raw RS"].tolist()
