@@ -85,7 +85,7 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
 
 
 def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Download short unadjusted histories used only to derive adjustment factors."""
+    """Download short unadjusted histories used only for source diagnostics and adjustment factors."""
     result: dict[str, pd.DataFrame] = {}
     for start in range(0, len(symbols), 100):
         group = symbols[start:start + 100]
@@ -128,14 +128,66 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return result
 
 
+def _download_yahoo_2y(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Fresh Yahoo 2-year diagnostic download; never used by the scanner."""
+    result: dict[str, pd.DataFrame] = {}
+    for start in range(0, len(symbols), 100):
+        group = symbols[start:start + 100]
+        try:
+            raw = yf.download(
+                tickers=[f"{s}.NS" for s in group],
+                period="2y",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                group_by="ticker",
+                threads=True,
+            )
+            if raw is None or raw.empty:
+                continue
+            level0 = set(raw.columns.get_level_values(0)) if isinstance(raw.columns, pd.MultiIndex) else set()
+            level1 = set(raw.columns.get_level_values(1)) if isinstance(raw.columns, pd.MultiIndex) else set()
+            for symbol in group:
+                ticker = f"{symbol}.NS"
+                try:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        if ticker in level0:
+                            x = raw[ticker].copy()
+                        elif ticker in level1:
+                            x = raw.xs(ticker, axis=1, level=1).copy()
+                        else:
+                            continue
+                    else:
+                        if len(group) != 1 or "Close" not in raw.columns:
+                            continue
+                        x = raw.copy()
+                    if "Close" not in x.columns:
+                        continue
+                    x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
+                    x = x[~x.index.isna()].sort_index()
+                    x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
+                    x = x.dropna(subset=["Close"])
+                    if not x.empty:
+                        result[symbol] = x
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return result
+
+
 def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
-    """Compare the scanner's Yahoo 2Y data, fresh Yahoo 10D data and NSE closes.
+    """Compare scanner Yahoo 2Y data, fresh Yahoo 10D data and NSE closes.
 
     Diagnostic only: this function never changes the scanner snapshot or RS results.
+    If the caller does not provide the cached scanner snapshot, a fresh Yahoo 2Y
+    diagnostic download is used so the comparison remains informative.
     """
     symbols = [str(s).strip().upper() for s in symbols if str(s).strip()]
     symbols = list(dict.fromkeys(symbols))
     recent = _download_raw_recent(symbols)
+    data = snapshot.get("data", {}) if isinstance(snapshot, dict) else {}
+    fallback_2y = _download_yahoo_2y(symbols) if not data else {}
     try:
         nse_date, nse_closes = fetch_latest_nse_close(require_today=False)
         nse_error = ""
@@ -144,9 +196,8 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
         nse_error = str(exc)
 
     rows = []
-    data = snapshot.get("data", {})
     for symbol in symbols:
-        frame = data.get(symbol)
+        frame = data.get(symbol) or fallback_2y.get(symbol)
         yahoo_2y_date = "—"
         yahoo_2y_close = None
         if frame is not None and not frame.empty and "Close" in frame.columns:
