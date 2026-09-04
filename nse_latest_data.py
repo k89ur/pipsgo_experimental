@@ -15,6 +15,7 @@ NSE_BHAVCOPY_URLS = (
 NSE_HOME = "https://www.nseindia.com/"
 IST = ZoneInfo("Asia/Kolkata")
 EQUITY_CLOSE_TIME = (15, 30)
+EQUITY_SERIES = {"EQ", "BE"}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0 Safari/537.36",
     "Accept": "text/csv,application/octet-stream,text/html;q=0.9,*/*;q=0.8",
@@ -44,7 +45,7 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
 
 
 def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
-    """Return the newest available NSE cash-market EQ close map."""
+    """Return the newest available NSE cash-market equity close map."""
     now = datetime.now(IST)
     today = now.date()
     if require_today and (now.hour, now.minute) < EQUITY_CLOSE_TIME:
@@ -65,7 +66,7 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
                     raise ValueError("NSE returned non-CSV content")
                 df = _read_bhavcopy(response.content)
                 df["SERIES"] = df["SERIES"].astype(str).str.strip().str.upper()
-                df = df[df["SERIES"].eq("EQ")].copy()
+                df = df[df["SERIES"].isin(EQUITY_SERIES)].copy()
                 df["SYMBOL"] = df["SYMBOL"].astype(str).str.strip().str.upper()
                 df["CLOSE_PRICE"] = pd.to_numeric(df["CLOSE_PRICE"], errors="coerce")
                 df = df.dropna(subset=["SYMBOL", "CLOSE_PRICE"])
