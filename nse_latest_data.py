@@ -128,6 +128,59 @@ def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return result
 
 
+def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
+    """Compare the scanner's Yahoo 2Y data, fresh Yahoo 10D data and NSE closes.
+
+    Diagnostic only: this function never changes the scanner snapshot or RS results.
+    """
+    symbols = [str(s).strip().upper() for s in symbols if str(s).strip()]
+    symbols = list(dict.fromkeys(symbols))
+    recent = _download_raw_recent(symbols)
+    try:
+        nse_date, nse_closes = fetch_latest_nse_close(require_today=False)
+        nse_error = ""
+    except Exception as exc:
+        nse_date, nse_closes = "—", {}
+        nse_error = str(exc)
+
+    rows = []
+    data = snapshot.get("data", {})
+    for symbol in symbols:
+        frame = data.get(symbol)
+        yahoo_2y_date = "—"
+        yahoo_2y_close = None
+        if frame is not None and not frame.empty and "Close" in frame.columns:
+            x = frame.copy()
+            x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
+            x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
+            x = x.dropna(subset=["Close"]).sort_index()
+            if not x.empty:
+                yahoo_2y_date = x.index[-1].date().isoformat()
+                yahoo_2y_close = float(x["Close"].iloc[-1])
+
+        yahoo_10d_date = "—"
+        yahoo_10d_close = None
+        recent_frame = recent.get(symbol)
+        if recent_frame is not None and not recent_frame.empty:
+            y = recent_frame.sort_index()
+            if "Close" in y.columns and not y["Close"].dropna().empty:
+                y = y.dropna(subset=["Close"])
+                yahoo_10d_date = y.index[-1].date().isoformat()
+                yahoo_10d_close = float(y["Close"].iloc[-1])
+
+        rows.append({
+            "Symbol": symbol,
+            "Yahoo 2Y Date": yahoo_2y_date,
+            "Yahoo 2Y Close": yahoo_2y_close,
+            "Yahoo 10D Date": yahoo_10d_date,
+            "Yahoo 10D Close": yahoo_10d_close,
+            "NSE Date": nse_date,
+            "NSE Close": nse_closes.get(symbol),
+            "NSE Error": nse_error,
+        })
+    return pd.DataFrame(rows)
+
+
 def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     """Overlay the official NSE close for EOD scans while preserving Yahoo adjusted-price scale."""
     data = snapshot.get("data", {})
