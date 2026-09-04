@@ -45,8 +45,11 @@ def _read_bhavcopy(content: bytes) -> pd.DataFrame:
     return df
 
 
-def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
-    """Return the newest available NSE cash-market equity close map."""
+def _fetch_nse_bhavcopy(
+    max_lookback_days: int = 5,
+    require_today: bool = False,
+) -> tuple[str, pd.DataFrame]:
+    """Return the newest NSE bhavcopy rows for supported equity series."""
     now = datetime.now(IST)
     today = now.date()
     if require_today and (now.hour, now.minute) < EQUITY_CLOSE_TIME:
@@ -78,12 +81,21 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
                         actual_day = actual_date.date()
                         if require_today and actual_day != today:
                             raise ValueError(f"NSE returned bhavcopy dated {actual_day}, expected {today}")
-                        return actual_day.isoformat(), dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
+                        return actual_day.isoformat(), df
             except Exception as exc:
                 last_error = exc
     if require_today:
         raise RuntimeError(f"Today's NSE EOD bhavcopy is not available yet: {last_error}")
     raise RuntimeError(f"Unable to retrieve a recent NSE bhavcopy: {last_error}")
+
+
+def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
+    """Return the newest available NSE cash-market equity close map."""
+    actual_date, df = _fetch_nse_bhavcopy(
+        max_lookback_days=max_lookback_days,
+        require_today=require_today,
+    )
+    return actual_date, dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
 
 
 def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
@@ -169,10 +181,18 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
     data = snapshot.get("data", {}) if isinstance(snapshot, dict) else {}
     fallback_2y = _download_yahoo_2y(symbols) if not data else {}
     try:
-        nse_date, nse_closes = fetch_latest_nse_close(require_today=False)
+        nse_date, nse_rows = _fetch_nse_bhavcopy(require_today=False)
+        nse_closes = dict(zip(nse_rows["SYMBOL"], nse_rows["CLOSE_PRICE"].astype(float)))
+        nse_rows = nse_rows.copy()
+        if "TTL_TRD_QTY" in nse_rows.columns:
+            nse_rows["TTL_TRD_QTY"] = pd.to_numeric(nse_rows["TTL_TRD_QTY"], errors="coerce")
+        nse_lookup = {
+            symbol: row for symbol, row in nse_rows.set_index("SYMBOL").iterrows()
+        }
         nse_error = ""
     except Exception as exc:
         nse_date, nse_closes = "—", {}
+        nse_lookup = {}
         nse_error = str(exc)
 
     rows = []
@@ -200,9 +220,27 @@ def source_check(snapshot: dict, symbols: list[str]) -> pd.DataFrame:
                 yahoo_10d_date = y.index[-1].date().isoformat()
                 yahoo_10d_close = float(y["Close"].iloc[-1])
 
-        rows.append({"Symbol": symbol, "Yahoo 2Y Date": yahoo_2y_date, "Yahoo 2Y Close": yahoo_2y_close,
-                     "Yahoo 10D Date": yahoo_10d_date, "Yahoo 10D Close": yahoo_10d_close,
-                     "NSE Date": nse_date, "NSE Close": nse_closes.get(symbol), "NSE Error": nse_error})
+        nse_row = nse_lookup.get(symbol)
+        nse_series = nse_row.get("SERIES") if nse_row is not None else None
+        nse_volume = nse_row.get("TTL_TRD_QTY") if nse_row is not None else None
+        nse_prev_close = nse_row.get("PREV_CLOSE") if nse_row is not None else None
+        nse_open = nse_row.get("OPEN_PRICE") if nse_row is not None else None
+
+        rows.append({
+            "Symbol": symbol,
+            "Yahoo 2Y Date": yahoo_2y_date,
+            "Yahoo 2Y Close": yahoo_2y_close,
+            "Yahoo 10D Date": yahoo_10d_date,
+            "Yahoo 10D Close": yahoo_10d_close,
+            "NSE Date": nse_date,
+            "NSE Series": nse_series,
+            "NSE Prev Close": nse_prev_close,
+            "NSE Open": nse_open,
+            "NSE Close": nse_closes.get(symbol),
+            "NSE Volume": nse_volume,
+            "NSE Row": "Present" if nse_row is not None else "Not Present",
+            "NSE Error": nse_error,
+        })
     return pd.DataFrame(rows)
 
 
