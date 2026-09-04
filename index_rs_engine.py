@@ -26,17 +26,18 @@ INDEX_UNIVERSE = [
 BENCHMARK_SYMBOL = "NIFTY"
 EXCHANGE = "NSE"
 BARS = 500
+RETRY_BARS = 1000
 
 
 def _empty_result() -> pd.Series:
     return pd.Series(dtype=float)
 
 
-def _fetch_tv(symbol: str) -> pd.Series:
+def _fetch_tv(symbol: str, n_bars: int = BARS) -> pd.Series:
     try:
         tv = TvDatafeed()
         frame = tv.get_hist(symbol=symbol, exchange=EXCHANGE, interval=Interval.in_daily,
-                            n_bars=BARS, extended_session=False)
+                            n_bars=n_bars, extended_session=False)
         if frame is None or frame.empty or "close" not in frame.columns:
             return _empty_result()
         close = pd.to_numeric(frame["close"], errors="coerce").dropna()
@@ -98,6 +99,23 @@ def run_index_scan(progress_callback: Optional[Callable[[int, int, str], None]] 
     benchmark = results.get("__BENCHMARK__", _empty_result())
     if benchmark.empty:
         raise RuntimeError("TradingView did not return NIFTY 50 daily bars. The anonymous TradingView data session may be temporarily limited; try Refresh RS once.")
+
+    # Some TradingView index series expose fewer than 253 bars on the first request.
+    # Retry only those symbols with a deeper history request before declaring them unavailable.
+    retry_keys = [key for key, _ in targets if key != "__BENCHMARK__" and (results.get(key, _empty_result()).empty or len(results.get(key, _empty_result())) <= 252)]
+    if retry_keys:
+        if progress_callback:
+            progress_callback(len(targets), len(targets), f"Retrying {len(retry_keys)} incomplete index series")
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(_fetch_tv, dict(INDEX_UNIVERSE)[key], RETRY_BARS): key for key in retry_keys}
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    retry = future.result()
+                except Exception:
+                    retry = _empty_result()
+                if not retry.empty:
+                    results[key] = retry
 
     benchmark_latest = benchmark.index[-1]
     rows = []
