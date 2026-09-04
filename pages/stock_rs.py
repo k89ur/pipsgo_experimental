@@ -77,14 +77,12 @@ with main:
 
     scan_mode = "intraday" if run_intraday else ("eod" if run_eod else None)
     if scan_mode == "eod":
-        now_ist = datetime.now(IST)
-        if NSE_OPEN <= now_ist.time() < NSE_CLOSE:
-            try:
-                if eod_scan_market_open():
-                    st.warning("⚠️ EOD Scan is unavailable while the NSE cash market is open (09:15–15:30 IST).")
-                    scan_mode = None
-            except Exception:
-                pass
+        try:
+            if eod_scan_market_open():
+                st.warning("⚠️ EOD Scan is unavailable while the NSE Capital Market session is running.")
+                scan_mode = None
+        except Exception:
+            pass
 
     if scan_mode:
         progress = status_slot.progress(0, text=f"Starting {scan_mode.upper()} scan…")
