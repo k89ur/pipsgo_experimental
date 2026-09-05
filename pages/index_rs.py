@@ -8,12 +8,14 @@ if "index_result" not in st.session_state:
 # UI ONLY: Index RS visual layer. Scanner engine and calculations are unchanged.
 st.markdown("""
 <style>
-.index-ui-brand{display:flex;align-items:center;gap:8px;margin:0 0 18px;font-size:15px;font-weight:800;letter-spacing:.25em;color:#eef2f0}.index-ui-brand-mark{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.5)}
-.index-ui-kicker{font-size:9px;color:#626c69;letter-spacing:.18em;text-transform:uppercase;margin-bottom:7px}.index-ui-title{font-size:28px;font-weight:700;letter-spacing:-.04em;line-height:1.08;color:#eef2f0}.index-ui-subtitle{font-size:10px;color:#737d7a;margin-top:6px}
-.index-ui-scan{margin-top:20px;border-top:1px solid #29302f;border-bottom:1px solid #29302f;padding:11px 0 10px}.index-ui-scan-title{font-size:11px;font-weight:650;color:#dfe5e2}.index-ui-scan-copy{font-size:9px;color:#68726f;margin-top:3px}.index-ui-scan-action{margin-top:9px}
-.index-ui-status{border:1px solid #29302f;background:#0e1213;overflow:hidden}.index-ui-status-head{padding:10px 11px;border-bottom:1px solid #29302f;font-size:8px;color:#626c69;letter-spacing:.16em;text-transform:uppercase}.index-ui-status-state{padding:10px 11px;border-bottom:1px solid #29302f;font-size:10px;font-weight:650;color:#e1e6e4;display:flex;align-items:center;gap:6px}.index-ui-status-dot{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.45)}.index-ui-stat{padding:8px 11px;border-bottom:1px solid #202625}.index-ui-stat:last-child{border-bottom:0}.index-ui-stat-label{font-size:7px;color:#596360;letter-spacing:.12em;text-transform:uppercase}.index-ui-stat-value{font-size:10px;color:#d5dbd8;font-weight:600;margin-top:3px}.index-ui-stat-value.green{color:#48d39a}
-.index-ui-leader-label{font-size:8px;color:#626c69;letter-spacing:.16em;text-transform:uppercase;margin:18px 0 7px}.index-ui-leaders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #29302f;border-bottom:1px solid #29302f}.index-ui-leader{padding:10px 12px;border-right:1px solid #29302f;min-width:0}.index-ui-leader:last-child{border-right:0}.index-ui-leader-rank{font-size:8px;color:#596360}.index-ui-leader-main{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px}.index-ui-leader-name{font-size:10px;font-weight:650;color:#e0e5e3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.index-ui-leader-score{font-size:19px;line-height:1;font-weight:750;color:#48d39a}.index-ui-leader-raw{font-size:8px;color:#596360;margin-top:4px}
-@media(max-width:900px){.index-ui-title{font-size:23px}.index-ui-leaders{grid-template-columns:1fr}.index-ui-leader{border-right:0;border-bottom:1px solid #29302f}.index-ui-leader:last-child{border-bottom:0}}
+.index-ui-brand{display:flex;align-items:center;gap:8px;margin:0 0 20px;font-size:15px;font-weight:800;letter-spacing:.25em;color:#eef2f0}.index-ui-brand-mark{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.5)}
+.index-ui-kicker{font-size:10px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}.index-ui-title{font-size:29px;font-weight:700;letter-spacing:-.04em;line-height:1.12;color:#eef2f0}.index-ui-subtitle{font-size:11px;color:#737d7a;margin-top:7px;line-height:1.45}
+.index-ui-scan{margin-top:22px;border-top:1px solid #29302f;border-bottom:1px solid #29302f;padding:13px 0 13px}.index-ui-scan-title{font-size:12px;font-weight:650;color:#dfe5e2;line-height:1.35}.index-ui-scan-copy{font-size:10px;color:#68726f;margin-top:5px;line-height:1.45}.index-ui-scan-action{margin-top:11px}
+.index-ui-status{border:1px solid #29302f;background:#0e1213;overflow:hidden;border-radius:3px}.index-ui-status-head{padding:11px 13px;border-bottom:1px solid #29302f;font-size:9px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;line-height:1.4}.index-ui-status-state{padding:11px 13px;border-bottom:1px solid #29302f;font-size:11px;font-weight:650;color:#e1e6e4;display:flex;align-items:center;gap:7px;line-height:1.35}.index-ui-status-dot{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.45);flex:0 0 auto}.index-ui-stat{padding:10px 13px;border-bottom:1px solid #202625}.index-ui-stat:last-child{border-bottom:0}.index-ui-stat-label{font-size:8px;color:#596360;letter-spacing:.12em;text-transform:uppercase;line-height:1.35}.index-ui-stat-value{font-size:11px;color:#d5dbd8;font-weight:600;margin-top:4px;line-height:1.35}.index-ui-stat-value.green{color:#48d39a}
+.index-ui-leader-label{font-size:9px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;margin:20px 0 8px;line-height:1.35}.index-ui-leaders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #29302f;border-bottom:1px solid #29302f}.index-ui-leader{padding:12px 14px;border-right:1px solid #29302f;min-width:0}.index-ui-leader:last-child{border-right:0}.index-ui-leader-rank{font-size:9px;color:#596360;line-height:1.35}.index-ui-leader-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}.index-ui-leader-name{font-size:11px;font-weight:650;color:#e0e5e3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35}.index-ui-leader-score{font-size:20px;line-height:1;font-weight:750;color:#48d39a;flex:0 0 auto}.index-ui-leader-raw{font-size:9px;color:#596360;margin-top:6px;line-height:1.35}
+.index-ui-results-title{font-size:11px;color:#dfe5e2;font-weight:600;margin:11px 0 8px;line-height:1.35}
+@media(max-width:900px){.index-ui-brand{margin-bottom:16px}.index-ui-title{font-size:24px}.index-ui-subtitle{font-size:10px}.index-ui-leaders{grid-template-columns:1fr}.index-ui-leader{border-right:0;border-bottom:1px solid #29302f}.index-ui-leader:last-child{border-bottom:0}.index-ui-status{margin-top:4px}.index-ui-scan{margin-top:18px}}
+@media(max-width:600px){.index-ui-title{font-size:21px}.index-ui-kicker{font-size:8px}.index-ui-brand{font-size:13px;margin-bottom:14px}.index-ui-scan{padding:11px 0}.index-ui-scan-title{font-size:11px}.index-ui-scan-copy{font-size:9px}.index-ui-status-head{padding:10px 11px}.index-ui-status-state{padding:10px 11px;font-size:10px}.index-ui-stat{padding:9px 11px}.index-ui-stat-label{font-size:7px}.index-ui-stat-value{font-size:10px}.index-ui-leader{padding:11px 12px}.index-ui-leader-name{font-size:10px}.index-ui-leader-score{font-size:18px}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,9 +26,8 @@ st.markdown('<div class="index-ui-subtitle">Daily relative-strength ranking acro
 
 main, side = st.columns([5.1, 1.05], gap="large")
 with side:
-    st.markdown('<div class="index-ui-status"><div class="index-ui-status-head">Scanner status</div>', unsafe_allow_html=True)
-    status_slot = st.empty(); stats_slot = st.empty()
-    st.markdown('</div>', unsafe_allow_html=True)
+    status_slot = st.empty()
+    stats_slot = st.empty()
 
 with main:
     st.markdown('<div class="index-ui-scan"><div class="index-ui-scan-title">Index scanner</div><div class="index-ui-scan-copy">Refresh the current TradingView daily index data and ranking</div><div class="index-ui-scan-action">', unsafe_allow_html=True)
@@ -48,15 +49,17 @@ with main:
 
     df = st.session_state.index_result
     if df is None:
-        status_slot.markdown('<div class="index-ui-status-state"><span class="index-ui-status-dot"></span>Waiting for scan</div>', unsafe_allow_html=True)
-        stats_slot.markdown('<div class="index-ui-stat"><div class="index-ui-stat-label">Status</div><div class="index-ui-stat-value">Ready</div></div>', unsafe_allow_html=True)
+        status_slot.markdown('<div class="index-ui-status"><div class="index-ui-status-head">Scanner status</div><div class="index-ui-status-state"><span class="index-ui-status-dot"></span>Waiting for scan</div></div>', unsafe_allow_html=True)
+        stats_slot.empty()
     else:
-        stats = st.session_state.get("index_stats", {}); valid = df[df["Raw RS"].notna()].copy()
+        stats = st.session_state.get("index_stats", {})
+        valid = df[df["Raw RS"].notna()].copy()
         strong = int((valid["RS 1-99"] >= 80).sum()); middle = int(((valid["RS 1-99"] >= 50) & (valid["RS 1-99"] < 80)).sum()); weak = int((valid["RS 1-99"] < 50).sum())
         asof = stats.get("benchmark_latest", stats.get("as_of")); asof_text = asof.strftime("%d %b %Y") if hasattr(asof, "strftime") else "—"
         unavailable = int(stats.get("unavailable_count", int(df["Latest Date"].isna().sum())))
         stale = int(stats.get("stale_count", 0)); insufficient = int((df["Latest Date"].notna() & df["Raw RS"].isna()).sum())
-        status_slot.markdown(f"<div class='index-ui-status-state'><span class='index-ui-status-dot'></span>Scan complete</div><div class='index-ui-stat'><div class='index-ui-stat-label'>Latest</div><div class='index-ui-stat-value'>{asof_text}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Universe</div><div class='index-ui-stat-value'>{stats.get('universe',28)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Calculated</div><div class='index-ui-stat-value green'>{stats.get('available',0)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Stale</div><div class='index-ui-stat-value'>{stale}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Insufficient</div><div class='index-ui-stat-value'>{insufficient}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Unavailable</div><div class='index-ui-stat-value'>{unavailable}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Strong 80+</div><div class='index-ui-stat-value green'>{strong}</div></div></div>", unsafe_allow_html=True)
+        status_slot.markdown(f"<div class='index-ui-status'><div class='index-ui-status-head'>Scanner status</div><div class='index-ui-status-state'><span class='index-ui-status-dot'></span>Scan complete</div><div class='index-ui-stat'><div class='index-ui-stat-label'>Latest</div><div class='index-ui-stat-value'>{asof_text}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Universe</div><div class='index-ui-stat-value'>{stats.get('universe',28)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Calculated</div><div class='index-ui-stat-value green'>{stats.get('available',0)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Stale</div><div class='index-ui-stat-value'>{stale}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Insufficient</div><div class='index-ui-stat-value'>{insufficient}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Unavailable</div><div class='index-ui-stat-value'>{unavailable}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Strong 80+</div><div class='index-ui-stat-value green'>{strong}</div></div></div>", unsafe_allow_html=True)
+        stats_slot.empty()
 
         top = valid.head(3)
         if len(top):
@@ -65,7 +68,7 @@ with main:
                 score=int(row["RS 1-99"]); cards.append(f"<div class='index-ui-leader'><div class='index-ui-leader-rank'>0{i}</div><div class='index-ui-leader-main'><div class='index-ui-leader-name'>{row['INDEX']}</div><div class='index-ui-leader-score'>{score}</div></div><div class='index-ui-leader-raw'>Raw RS {row['Raw RS']:.2f}</div></div>")
             st.markdown('<div class="index-ui-leader-label">Top relative strength</div><div class="index-ui-leaders">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
-        st.markdown(f'<div class="results-head"><div class="results-title">Results <span class="results-count">{len(valid):,}</span></div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="index-ui-results-title">Results <span style="color:#48d39a;margin-left:5px">{len(valid):,}</span></div>',unsafe_allow_html=True)
         search_col, filter_col = st.columns([2.8,1.7])
         with search_col: search=st.text_input("Search",placeholder="Search index…",label_visibility="collapsed",key="index_search")
         with filter_col: filter_mode=st.selectbox("Filter",["All","Strong · 80+","Middle · 50–79","Weak · <50","Unavailable"],label_visibility="collapsed",key="index_filter")
