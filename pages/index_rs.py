@@ -10,12 +10,12 @@ st.markdown("""
 <style>
 .index-ui-brand{display:flex;align-items:center;gap:8px;margin:0 0 20px;font-size:15px;font-weight:800;letter-spacing:.25em;color:#eef2f0}.index-ui-brand-mark{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.5)}
 .index-ui-kicker{font-size:10px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}.index-ui-title{font-size:29px;font-weight:700;letter-spacing:-.04em;line-height:1.12;color:#eef2f0}.index-ui-subtitle{font-size:11px;color:#737d7a;margin-top:7px;line-height:1.45}
-.index-ui-scan{margin-top:22px;border-top:1px solid #29302f;border-bottom:1px solid #29302f;padding:13px 0 13px}.index-ui-scan-title{font-size:12px;font-weight:650;color:#dfe5e2;line-height:1.35}.index-ui-scan-copy{font-size:10px;color:#68726f;margin-top:5px;line-height:1.45}.index-ui-scan-action{margin-top:11px}
-.index-ui-status{border:1px solid #29302f;background:#0e1213;overflow:hidden;border-radius:3px}.index-ui-status-head{padding:11px 13px;border-bottom:1px solid #29302f;font-size:9px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;line-height:1.4}.index-ui-status-state{padding:11px 13px;border-bottom:1px solid #29302f;font-size:11px;font-weight:650;color:#e1e6e4;display:flex;align-items:center;gap:7px;line-height:1.35}.index-ui-status-dot{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.45);flex:0 0 auto}.index-ui-stat{padding:10px 13px;border-bottom:1px solid #202625}.index-ui-stat:last-child{border-bottom:0}.index-ui-stat-label{font-size:8px;color:#596360;letter-spacing:.12em;text-transform:uppercase;line-height:1.35}.index-ui-stat-value{font-size:11px;color:#d5dbd8;font-weight:600;margin-top:4px;line-height:1.35}.index-ui-stat-value.green{color:#48d39a}
+.index-ui-scan{margin-top:24px;border-top:1px solid #29302f;border-bottom:1px solid #29302f;padding:15px 0 17px}.index-ui-scan-title{font-size:12px;font-weight:650;color:#dfe5e2;line-height:1.35}.index-ui-scan-copy{font-size:10px;color:#68726f;margin-top:5px;line-height:1.45}.index-ui-scan-action{margin-top:14px;padding:2px 0 3px}
+.index-ui-status{border:1px solid #29302f;background:#0e1213;overflow:hidden;border-radius:3px}.index-ui-status-head{padding:12px 15px;border-bottom:1px solid #29302f;font-size:10px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;line-height:1.4}.index-ui-status-state{padding:12px 15px;border-bottom:1px solid #29302f;font-size:12px;font-weight:650;color:#e1e6e4;display:flex;align-items:center;gap:8px;line-height:1.4}.index-ui-status-dot{width:7px;height:7px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.45);flex:0 0 auto}.index-ui-stat{padding:11px 15px;border-bottom:1px solid #202625}.index-ui-stat:last-child{border-bottom:0}.index-ui-stat-label{font-size:9px;color:#596360;letter-spacing:.12em;text-transform:uppercase;line-height:1.35}.index-ui-stat-value{font-size:12px;color:#d5dbd8;font-weight:600;margin-top:4px;line-height:1.35}.index-ui-stat-value.green{color:#48d39a}
 .index-ui-leader-label{font-size:9px;color:#68726f;letter-spacing:.16em;text-transform:uppercase;margin:20px 0 8px;line-height:1.35}.index-ui-leaders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #29302f;border-bottom:1px solid #29302f}.index-ui-leader{padding:12px 14px;border-right:1px solid #29302f;min-width:0}.index-ui-leader:last-child{border-right:0}.index-ui-leader-rank{font-size:9px;color:#596360;line-height:1.35}.index-ui-leader-main{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}.index-ui-leader-name{font-size:11px;font-weight:650;color:#e0e5e3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35}.index-ui-leader-score{font-size:20px;line-height:1;font-weight:750;color:#48d39a;flex:0 0 auto}.index-ui-leader-raw{font-size:9px;color:#596360;margin-top:6px;line-height:1.35}
 .index-ui-results-title{font-size:11px;color:#dfe5e2;font-weight:600;margin:11px 0 8px;line-height:1.35}
-@media(max-width:900px){.index-ui-brand{margin-bottom:16px}.index-ui-title{font-size:24px}.index-ui-subtitle{font-size:10px}.index-ui-leaders{grid-template-columns:1fr}.index-ui-leader{border-right:0;border-bottom:1px solid #29302f}.index-ui-leader:last-child{border-bottom:0}.index-ui-status{margin-top:4px}.index-ui-scan{margin-top:18px}}
-@media(max-width:600px){.index-ui-title{font-size:21px}.index-ui-kicker{font-size:8px}.index-ui-brand{font-size:13px;margin-bottom:14px}.index-ui-scan{padding:11px 0}.index-ui-scan-title{font-size:11px}.index-ui-scan-copy{font-size:9px}.index-ui-status-head{padding:10px 11px}.index-ui-status-state{padding:10px 11px;font-size:10px}.index-ui-stat{padding:9px 11px}.index-ui-stat-label{font-size:7px}.index-ui-stat-value{font-size:10px}.index-ui-leader{padding:11px 12px}.index-ui-leader-name{font-size:10px}.index-ui-leader-score{font-size:18px}}
+@media(max-width:900px){.index-ui-brand{margin-bottom:16px}.index-ui-title{font-size:24px}.index-ui-subtitle{font-size:10px}.index-ui-leaders{grid-template-columns:1fr}.index-ui-leader{border-right:0;border-bottom:1px solid #29302f}.index-ui-leader:last-child{border-bottom:0}.index-ui-status{margin-top:4px}.index-ui-scan{margin-top:20px;padding:14px 0 16px}}
+@media(max-width:600px){.index-ui-title{font-size:21px}.index-ui-kicker{font-size:8px}.index-ui-brand{font-size:13px;margin-bottom:14px}.index-ui-scan{padding:13px 0 15px}.index-ui-scan-title{font-size:11px}.index-ui-scan-copy{font-size:9px}.index-ui-status-head{padding:11px 13px;font-size:9px}.index-ui-status-state{padding:11px 13px;font-size:11px}.index-ui-stat{padding:10px 13px}.index-ui-stat-label{font-size:8px}.index-ui-stat-value{font-size:11px}.index-ui-leader{padding:11px 12px}.index-ui-leader-name{font-size:10px}.index-ui-leader-score{font-size:18px}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,7 +24,7 @@ st.markdown('<div class="index-ui-kicker">INDEX RELATIVE STRENGTH / DAILY</div>'
 st.markdown('<div class="index-ui-title">Index Relative Strength</div>', unsafe_allow_html=True)
 st.markdown('<div class="index-ui-subtitle">Daily relative-strength ranking across the supported NIFTY index universe</div>', unsafe_allow_html=True)
 
-main, side = st.columns([5.1, 1.05], gap="large")
+main, side = st.columns([4.8, 1.35], gap="large")
 with side:
     status_slot = st.empty()
     stats_slot = st.empty()
@@ -35,12 +35,14 @@ with main:
     st.markdown('</div></div>', unsafe_allow_html=True)
 
     if run_index or st.session_state.index_result is None:
-        progress = status_slot.progress(0, text="Connecting to TradingView…")
+        with status_slot.container(border=True):
+            st.markdown('<div class="index-ui-status-head">Scanner status</div><div class="index-ui-status-state"><span class="index-ui-status-dot"></span>Scanning</div>', unsafe_allow_html=True)
+            progress = st.progress(0, text="Connecting to TradingView…")
         try:
             def update(done, total, message):
                 pct = min(done / max(total, 1), 1.0)
                 progress.progress(pct, text=f"{message} · {done}/{total}")
-                stats_slot.markdown(f"<div class='index-ui-status-state'><span class='index-ui-status-dot'></span>Scanning</div><div class='index-ui-stat'><div class='index-ui-stat-label'>Progress</div><div class='index-ui-stat-value'>{pct*100:.0f}%</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Processed</div><div class='index-ui-stat-value'>{done}/{total}</div></div>", unsafe_allow_html=True)
+                stats_slot.markdown(f"<div class='index-ui-status'><div class='index-ui-stat'><div class='index-ui-stat-label'>Progress</div><div class='index-ui-stat-value'>{pct*100:.0f}%</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Processed</div><div class='index-ui-stat-value'>{done}/{total}</div></div></div>", unsafe_allow_html=True)
             df, stats = run_index_scan(update)
             st.session_state.index_result = df; st.session_state.index_stats = stats
             progress.progress(1.0, text="Scan complete")
