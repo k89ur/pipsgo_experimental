@@ -99,16 +99,6 @@ with main:
             stale_count = stats.get("stale_data_count", 0)
             date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
             stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Status</div><div class='rstat-value score-strong'>Complete</div></div><div class='rstat'><div class='rstat-label'>Mode</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()}</div></div><div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{len(result):,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
-            if stale_count:
-                distribution = stats.get("date_distribution", {})
-                if distribution:
-                    with st.expander("Latest date distribution", expanded=False):
-                        for date, count in list(distribution.items())[:10]:
-                            st.write(f"**{date}** — {count:,}")
-                        stale_symbols = stats.get("stale_data_symbols", [])
-                        if stale_symbols:
-                            st.caption("Stale symbols")
-                            st.write(", ".join(stale_symbols))
         except Exception as e:
             progress.empty()
             status_slot.error("Scan failed")
@@ -124,24 +114,40 @@ with main:
         strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
         stale_count = stats.get("stale_data_count", 0)
         date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
-        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
-        if stale_count:
-            distribution = stats.get("date_distribution", {})
+        staleness_label = f"{stale_count:,} stale" if stale_count else "0 stale"
+        stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Stale data</div><div class='rstat-value'>{staleness_label}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
+
+        distribution = stats.get("date_distribution", {})
+        stale_symbols = stats.get("stale_data_symbols", [])
+        missing_symbols = stats.get("missing", [])
+        short_history = stats.get("short_history", [])
+        with st.expander("Data diagnostics · stale / missing / history", expanded=False):
+            st.caption("Diagnostic only — these checks do not change RS calculations or technical filters.")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Stale", f"{stale_count:,}")
+            d2.metric("Missing", f"{len(missing_symbols):,}")
+            d3.metric("Short history", f"{len(short_history):,}")
             if distribution:
-                with st.expander("Latest date distribution", expanded=False):
-                    for date, count in list(distribution.items())[:10]:
-                        st.write(f"**{date}** — {count:,}")
-                    stale_symbols = stats.get("stale_data_symbols", [])
-                    if stale_symbols:
-                        st.caption("Stale symbols")
-                        st.write(", ".join(stale_symbols))
-                        if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
-                            with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
-                                st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
-                        source_df = st.session_state.get("source_check")
-                        if source_df is not None:
-                            st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
-                            st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
+                st.markdown("**Latest date distribution**")
+                dist_rows = [{"Date": date, "Symbols": count} for date, count in list(distribution.items())[:15]]
+                st.dataframe(pd.DataFrame(dist_rows), use_container_width=True, hide_index=True)
+            if stale_symbols:
+                st.markdown("**Stale symbols**")
+                st.code(", ".join(stale_symbols), language=None)
+            if missing_symbols:
+                st.markdown("**Missing symbols**")
+                st.code(", ".join(missing_symbols), language=None)
+            if short_history:
+                st.markdown("**Short / unusable history symbols**")
+                st.code(", ".join(short_history), language=None)
+            if stale_symbols:
+                if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
+                    with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
+                        st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
+                source_df = st.session_state.get("source_check")
+                if source_df is not None:
+                    st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
+                    st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
         search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
         view = df.copy()
