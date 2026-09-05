@@ -25,25 +25,20 @@ def _cached_stock_batch(
         period=period,
     )
     if len(result) < len(symbols_tuple):
-        # Never persist a partial batch. The engine can retry/recover it.
         raise RuntimeError("Incomplete batch; do not cache partial market data")
     return result
 
 
 def install(engine_module) -> None:
-    """Persist stock market-data batches while keeping live scan progress callbacks."""
+    """Persist stock market-data batches while keeping the engine progress callbacks."""
     if getattr(engine_module, "_persistent_snapshot_installed", False):
         return
 
     original_download_batch = engine_module._download_batch
+    original_download_universe = engine_module._download_universe
     original_clear_cache = engine_module.clear_stock_data_cache
 
-    def cached_download_batch(
-        symbols,
-        retries=3,
-        threads=True,
-        period="2y",
-    ):
+    def cached_download_batch(symbols, retries=3, threads=True, period="2y"):
         symbols = list(symbols)
         if not symbols:
             return {}
@@ -58,8 +53,7 @@ def install(engine_module) -> None:
                 original_download_batch,
             )
         except RuntimeError:
-            # Partial results must never enter persistent cache. Return the
-            # engine's normal result shape so _download_universe can recover.
+            # Never persist partial batches; let the engine's recovery logic handle them.
             return original_download_batch(
                 symbols,
                 retries=retries,
@@ -76,21 +70,13 @@ def install(engine_module) -> None:
     ):
         if force_refresh:
             _cached_stock_batch.clear()
-            return original_download_universe(
-                symbols,
-                batch_size=batch_size,
-                snapshot_mode=snapshot_mode,
-                force_refresh=True,
-                progress_callback=progress_callback,
-            )
-
-        # The engine still owns the snapshot lifecycle and progress reporting.
-        # Only the expensive Yahoo batches are made session-independent.
+        # The original engine owns snapshot orchestration and progress reporting.
+        # Its calls to _download_batch now transparently use the persistent batch cache.
         return original_download_universe(
             symbols,
             batch_size=batch_size,
             snapshot_mode=snapshot_mode,
-            force_refresh=False,
+            force_refresh=force_refresh,
             progress_callback=progress_callback,
         )
 
