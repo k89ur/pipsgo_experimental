@@ -128,7 +128,7 @@ if scan_live or scan_eod:
             pct = int(done / total * 100) if total else 0
             progress.progress(pct, text=f"{label} · {done:,}/{total:,}")
         with st.spinner("Running stock scan…"):
-            df, stats = run_scan(min_rs=min_rs, near_high=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
+            df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
         st.session_state.stock_result = df
         st.session_state.stock_stats = stats
         progress.empty()
