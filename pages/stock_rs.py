@@ -91,7 +91,7 @@ with main:
             st.session_state.stock_result = result
             st.session_state.stock_stats = stats
             st.session_state.pop("source_check", None)
-            progress.progress(1.0, text=f"{'LIVE MARKET SCAN' if scan_mode == 'intraday' else 'AFTER MARKET SCAN'} COMPLETE")
+            progress.progress(1.0, text="After Market Scan Complete" if scan_mode == "eod" else "Live Market Scan Complete")
             stale_count = stats.get("stale_data_count", 0)
             date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
             stats_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Status</div><div class='rstat-value score-strong'>Complete</div></div><div class='rstat'><div class='rstat-label'>Mode</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()}</div></div><div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{len(result):,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
