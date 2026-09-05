@@ -16,12 +16,13 @@ NSE_CLOSE = time(15, 30)
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
 
-@st.dialog("Refresh market data")
+@st.dialog("Reset scan")
 def refresh_market_data_dialog():
-    st.write("Clear the current market-data snapshots?")
+    st.warning("Downloaded market data will be cleared and must be downloaded again.")
+    st.write("Are you sure you want to clear the data?")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Confirm", type="primary", use_container_width=True, key="confirm_stock_refresh"):
+        if st.button("Confirm reset", type="primary", use_container_width=True, key="confirm_stock_refresh"):
             clear_stock_data_cache()
             st.session_state.stock_result = None
             st.session_state.pop("stock_stats", None)
@@ -62,11 +63,11 @@ with main:
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         scan1, scan2, refresh = st.columns([1.45, 1.45, 1.55], gap="small")
         with scan1:
-            run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True)
+            run_intraday = st.button("▶  Live Market Scan", type="primary", use_container_width=True)
         with scan2:
-            run_eod = st.button("▶  21:00 EOD Scan", use_container_width=True)
+            run_eod = st.button("▶  After Market Scan", use_container_width=True)
         with refresh:
-            if st.button("↻  Refresh Data", use_container_width=True):
+            if st.button("↻  Reset Scan", use_container_width=True):
                 refresh_market_data_dialog()
 
     if st.session_state.get("stock_refresh_message"):
