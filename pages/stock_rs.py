@@ -112,7 +112,6 @@ with main:
         with refresh:
             if st.button("↻ Reset Scan", use_container_width=True, key="stock_refresh"):
                 refresh_market_data_dialog()
-
         status = st.empty()
 
 if scan_live or scan_eod:
@@ -137,84 +136,85 @@ if scan_live or scan_eod:
         status.error(f"Stock scan failed: {e}")
         st.stop()
 
-stats = st.session_state.get("stock_stats")
-df = st.session_state.stock_result
-if stats and df is not None:
-    matches = len(df)
-    coverage = stats.get("coverage", 0.0)
-    near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0
-    strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
-    stale_count = stats.get("stale_data_count", 0)
-    date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
-    status_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Stale data</div><div class='rstat-value'>{stale_count:,} stale</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
-    distribution = stats.get("date_distribution", {})
-    stale_symbols = stats.get("stale_data_symbols", [])
-    missing_symbols = stats.get("missing", [])
-    short_history = stats.get("short_history", [])
-    with st.expander("Data diagnostics · stale / missing / history", expanded=False):
-        st.caption("Diagnostic only — these checks do not change RS calculations or technical filters.")
-        d1, d2, d3 = st.columns(3)
-        d1.metric("Stale", f"{stale_count:,}")
-        d2.metric("Missing", f"{len(missing_symbols):,}")
-        d3.metric("Short history", f"{len(short_history):,}")
-        if distribution:
-            st.markdown("**Latest date distribution**")
-            dist_rows = [{"Date": date, "Symbols": count} for date, count in list(distribution.items())[:15]]
-            st.dataframe(pd.DataFrame(dist_rows), use_container_width=True, hide_index=True)
-        if stale_symbols:
-            st.markdown("**Stale symbols**")
-            st.code(", ".join(stale_symbols), language=None)
-        if missing_symbols:
-            st.markdown("**Missing symbols**")
-            st.code(", ".join(missing_symbols), language=None)
-        if short_history:
-            st.markdown("**Short / unusable history symbols**")
-            st.code(", ".join(short_history), language=None)
-        if stale_symbols:
-            if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
-                with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
-                    st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
-            source_df = st.session_state.get("source_check")
-            if source_df is not None:
-                st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
-                st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
-    st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
-    search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
-    view = df.copy()
-    if search:
-        q = search.strip()
-        view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
-    display_cols = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "TradingView"]
-    shown = view[[c for c in display_cols if c in view.columns]].copy()
-    shown.insert(0, "S.No", range(1, len(shown) + 1))
-    all_columns = list(shown.columns)
-    saved_columns = st.session_state.get("stock_columns", all_columns)
-    saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
-    shown_for_table = shown[saved_columns]
-    full_table = df[[c for c in display_cols if c in df.columns]].copy()
-    full_table.insert(0, "S.No", range(1, len(full_table) + 1))
-    def stock_style(row):
-        styles = [""] * len(row)
-        if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
-            score = float(row["RS Rating"])
-            fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
-            styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
-        return styles
-    st.markdown('<div class="table-action-row">', unsafe_allow_html=True)
-    action_spacer, view_action, download_action, full_action = st.columns([9.25, 0.42, 0.42, 0.42], gap="small")
-    with view_action:
-        if st.button("", icon=":material/view_column:", type="tertiary", width=28, key="stock_column_view", help="View columns"):
-            stock_column_selector(all_columns, saved_columns)
-    with download_action:
-        st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
-    with full_action:
-        if st.button("", icon=":material/fullscreen:", type="tertiary", width=28, key="stock_full_table", help="Full table view"):
-            st.session_state.stock_full_table = True
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
-    st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
-    st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
-    st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filters are optional. Minervini MA trend checks price above 50 / 150 / 200 DMA; MA rising checks can be enabled separately. Index membership and Industry are informational metadata and are not used in scan calculations.</div>', unsafe_allow_html=True)
-else:
-    st.markdown('<div class="empty-state"><div class="empty-title">No scan results yet</div><div class="empty-sub">Run a Live Market Scan or After Market Scan to populate the stock ranking.</div></div>', unsafe_allow_html=True)
+with main:
+    stats = st.session_state.get("stock_stats")
+    df = st.session_state.stock_result
+    if stats and df is not None:
+        matches = len(df)
+        coverage = stats.get("coverage", 0.0)
+        near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0
+        strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
+        stale_count = stats.get("stale_data_count", 0)
+        date_status = stats.get("data_date", "—") if stale_count == 0 else f"{stats.get('data_date', '—')} · {stale_count} stale"
+        status_slot.markdown(f"<div class='rstat'><div class='rstat-label'>Matches</div><div class='rstat-value'>{matches:,}</div></div><div class='rstat'><div class='rstat-label'>Universe</div><div class='rstat-value'>{stats.get('universe','—')}</div></div><div class='rstat'><div class='rstat-label'>Coverage</div><div class='rstat-value'>{stats.get('coverage',0):.1f}%</div></div><div class='rstat'><div class='rstat-label'>Data</div><div class='rstat-value'>{stats.get('downloaded',0):,} / {stats.get('universe',0):,}</div></div><div class='rstat'><div class='rstat-label'>RS {min_rs}+</div><div class='rstat-value score-strong'>{strong:,}</div></div><div class='rstat'><div class='rstat-label'>Within {near_high}% of 52W high</div><div class='rstat-value'>{near:,}</div></div><div class='rstat'><div class='rstat-label'>Data date</div><div class='rstat-value'>{date_status}</div></div><div class='rstat'><div class='rstat-label'>Stale data</div><div class='rstat-value'>{stale_count:,} stale</div></div><div class='rstat'><div class='rstat-label'>Snapshot</div><div class='rstat-value'>{stats.get('snapshot_mode','—').upper()} · {stats.get('downloaded_at','—').replace('T',' ')}</div></div>", unsafe_allow_html=True)
+        distribution = stats.get("date_distribution", {})
+        stale_symbols = stats.get("stale_data_symbols", [])
+        missing_symbols = stats.get("missing", [])
+        short_history = stats.get("short_history", [])
+        with st.expander("Data diagnostics · stale / missing / history", expanded=False):
+            st.caption("Diagnostic only — these checks do not change RS calculations or technical filters.")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Stale", f"{stale_count:,}")
+            d2.metric("Missing", f"{len(missing_symbols):,}")
+            d3.metric("Short history", f"{len(short_history):,}")
+            if distribution:
+                st.markdown("**Latest date distribution**")
+                dist_rows = [{"Date": date, "Symbols": count} for date, count in list(distribution.items())[:15]]
+                st.dataframe(pd.DataFrame(dist_rows), use_container_width=True, hide_index=True)
+            if stale_symbols:
+                st.markdown("**Stale symbols**")
+                st.code(", ".join(stale_symbols), language=None)
+            if missing_symbols:
+                st.markdown("**Missing symbols**")
+                st.code(", ".join(missing_symbols), language=None)
+            if short_history:
+                st.markdown("**Short / unusable history symbols**")
+                st.code(", ".join(short_history), language=None)
+            if stale_symbols:
+                if st.button("Run source check", key="run_stale_source_check", use_container_width=True):
+                    with st.spinner("Comparing Yahoo 2Y, Yahoo 10D and NSE…"):
+                        st.session_state.source_check = source_check(stats.get("snapshot", {}), stale_symbols)
+                source_df = st.session_state.get("source_check")
+                if source_df is not None:
+                    st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
+                    st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
+        st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
+        search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
+        view = df.copy()
+        if search:
+            q = search.strip()
+            view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
+        display_cols = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "TradingView"]
+        shown = view[[c for c in display_cols if c in view.columns]].copy()
+        shown.insert(0, "S.No", range(1, len(shown) + 1))
+        all_columns = list(shown.columns)
+        saved_columns = st.session_state.get("stock_columns", all_columns)
+        saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
+        shown_for_table = shown[saved_columns]
+        full_table = df[[c for c in display_cols if c in df.columns]].copy()
+        full_table.insert(0, "S.No", range(1, len(full_table) + 1))
+        def stock_style(row):
+            styles = [""] * len(row)
+            if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
+                score = float(row["RS Rating"])
+                fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
+                styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
+            return styles
+        st.markdown('<div class="table-action-row">', unsafe_allow_html=True)
+        action_spacer, view_action, download_action, full_action = st.columns([9.25, 0.42, 0.42, 0.42], gap="small")
+        with view_action:
+            if st.button("", icon=":material/view_column:", type="tertiary", width=28, key="stock_column_view", help="View columns"):
+                stock_column_selector(all_columns, saved_columns)
+        with download_action:
+            st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
+        with full_action:
+            if st.button("", icon=":material/fullscreen:", type="tertiary", width=28, key="stock_full_table", help="Full table view"):
+                st.session_state.stock_full_table = True
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
+        st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
+        st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filters are optional. Minervini MA trend checks price above 50 / 150 / 200 DMA; MA rising checks can be enabled separately. Index membership and Industry are informational metadata and are not used in scan calculations.</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="empty-state"><div class="empty-title">No scan results yet</div><div class="empty-sub">Run a Live Market Scan or After Market Scan to populate the stock ranking.</div></div>', unsafe_allow_html=True)
