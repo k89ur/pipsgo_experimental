@@ -15,6 +15,8 @@ NSE_CLOSE = time(15, 30)
 
 if "stock_result" not in st.session_state:
     st.session_state.stock_result = None
+if "stock_full_table" not in st.session_state:
+    st.session_state.stock_full_table = False
 
 @st.dialog("Reset scan")
 def refresh_market_data_dialog():
@@ -35,6 +37,36 @@ def refresh_market_data_dialog():
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable scan filters</div></div>', unsafe_allow_html=True)
+
+if st.session_state.stock_full_table:
+    df = st.session_state.stock_result
+    if df is None or df.empty:
+        st.info("Run a Stock RS scan first to open the full table.")
+        if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="stock_full_minimize_empty", help="Return to scanner"):
+            st.session_state.stock_full_table = False
+            st.rerun()
+        st.stop()
+
+    display_cols = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "TradingView"]
+    full_table = df[[c for c in display_cols if c in df.columns]].copy()
+    full_table.insert(0, "S.No", range(1, len(full_table) + 1))
+
+    def stock_style(row):
+        styles = [""] * len(row)
+        if "RS Rating" in row.index and pd.notna(row["RS Rating"]):
+            score = float(row["RS Rating"])
+            fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
+            styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
+        return styles
+
+    top_spacer, minimize = st.columns([20, 1], gap="small")
+    with minimize:
+        if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="stock_full_minimize", help="Return to scanner"):
+            st.session_state.stock_full_table = False
+            st.rerun()
+
+    st.dataframe(full_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(900, 95 + max(len(full_table), 1) * 36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
+    st.stop()
 
 main, side = st.columns([4.7, 1.35], gap="large")
 with side:
@@ -175,17 +207,24 @@ with main:
                 fg = "#35d07f" if score >= 80 else ("#f3b94b" if score >= 50 else "#ff6673")
                 styles[row.index.get_loc("RS Rating")] = f"color:{fg};font-weight:700;"
             return styles
-        table_head, view_action, download_action, full_action = st.columns([7.8, 0.7, 0.7, 0.7], gap="small")
-        with table_head:
-            st.markdown('<div style="height:1.45rem"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="table-action-row">', unsafe_allow_html=True)
+        action_spacer, view_action, download_action, full_action = st.columns([9.25, 0.42, 0.42, 0.42], gap="small")
         with view_action:
             with st.popover("", icon=":material/view_column:", width="content", help="View columns"):
-                st.caption("Select columns")
-                st.multiselect("Show columns", all_columns, default=saved_columns, label_visibility="collapsed", key="stock_columns")
+                st.caption("Columns")
+                for col in all_columns:
+                    checked = col in saved_columns
+                    if st.checkbox(col, value=checked, key=f"stock_col_{col}") != checked:
+                        selected = [c for c in all_columns if st.session_state.get(f"stock_col_{c}", c in saved_columns)]
+                        st.session_state.stock_columns = selected or ["Symbol"]
+                        st.rerun()
         with download_action:
-            st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
+            st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
         with full_action:
-            st.page_link("pages/full_stock_table.py", label="", icon=":material/fullscreen:", width="content", help="Full table view")
+            if st.button("", icon=":material/fullscreen:", type="tertiary", width=28, key="stock_full_table", help="Full table view"):
+                st.session_state.stock_full_table = True
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
         st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
