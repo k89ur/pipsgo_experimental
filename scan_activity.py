@@ -31,7 +31,7 @@ def _render(slot, lines, status="RUNNING", error=False):
           <div class='scan-activity-body'>{body}</div>
         </div>
         <style>
-        .scan-activity{{position:fixed;left:16px;bottom:16px;width:240px;z-index:999999;background:#090d12;border:1px solid #27313d;border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.42);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#aeb8c5;overflow:hidden}}
+        .scan-activity{{display:block!important;position:fixed;left:16px;bottom:16px;width:240px;z-index:999999;background:#090d12;border:1px solid #27313d;border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.42);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#aeb8c5;overflow:hidden}}
         .scan-activity-head{{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-bottom:1px solid #202934;background:#0d131a;font-size:9px;letter-spacing:.10em;color:#778292}}
         .scan-activity-head b{{font-size:8px;color:#35d07f;font-weight:600}}
         .scan-activity.error .scan-activity-head b{{color:#ff6673}}
