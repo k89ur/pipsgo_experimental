@@ -45,24 +45,21 @@ with side:
 with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">Scan settings</div>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3, gap="medium")
-        with c1:
+        s1, s2, s3, s4 = st.columns([1.45, 1.45, 1.25, 1.35], gap="small")
+        with s1:
             use_min_rs = st.checkbox("Minimum RS", value=True, key="stock_use_min_rs")
             min_rs = st.slider("RS threshold", 50, 99, 80, key="stock_min_rs", disabled=not use_min_rs)
-        with c2:
+        with s2:
             use_near_high = st.checkbox("Near 52W high", value=True, key="stock_use_near_high")
             near_high = st.slider("Maximum distance (%)", 1, 25, 5, key="stock_near_high", disabled=not use_near_high)
-        with c3:
+        with s3:
             use_min_price = st.checkbox("Minimum price", value=True, key="stock_use_min_price")
             min_price = st.number_input("Minimum LTP (₹)", min_value=1.0, value=100.0, step=10.0, key="stock_min_price", disabled=not use_min_price)
-        st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
-        t1, t2 = st.columns(2, gap="medium")
-        with t1:
+        with s4:
             use_minervini = st.checkbox("Minervini MA trend", value=True, key="stock_minervini")
-        with t2:
             use_ma_rising = st.checkbox("MA rising", value=False, key="stock_use_ma_rising")
             rising_days = st.slider("Rising days", 5, 40, 20, key="stock_rising_days", disabled=not use_ma_rising)
-        st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         scan1, scan2, refresh = st.columns([1.45, 1.45, 1.55], gap="small")
         with scan1:
             run_intraday = st.button("▶  14:00 Scan", type="primary", use_container_width=True)
