@@ -21,7 +21,7 @@ def _hide_old_activity():
 def _render(slot, lines, status="RUNNING", error=False):
     body = "".join(
         f"<div class='scan-log-line'>{html.escape(line)}</div>"
-        for line in lines[-12:]
+        for line in lines[-10:]
     )
     status_class = "error" if error else ("done" if status == "COMPLETE" else "live")
     slot.markdown(
@@ -31,15 +31,68 @@ def _render(slot, lines, status="RUNNING", error=False):
           <div class='scan-activity-body'>{body}</div>
         </div>
         <style>
-        .scan-activity{{display:block!important;position:fixed;left:16px;bottom:16px;width:240px;z-index:999999;background:#090d12;border:1px solid #27313d;border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.42);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#aeb8c5;overflow:hidden}}
-        .scan-activity-head{{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-bottom:1px solid #202934;background:#0d131a;font-size:9px;letter-spacing:.10em;color:#778292}}
+        .scan-activity{{
+            display:block!important;
+            position:fixed;
+            left:16px;
+            bottom:16px;
+            width:240px;
+            z-index:999999;
+            background:#090d12;
+            border:1px solid #27313d;
+            border-radius:7px;
+            box-shadow:0 8px 28px rgba(0,0,0,.42);
+            font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+            color:#aeb8c5;
+            overflow:hidden;
+        }}
+        .scan-activity-head{{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            padding:6px 9px;
+            border-bottom:1px solid #202934;
+            background:#0d131a;
+            font-size:9px;
+            letter-spacing:.10em;
+            color:#778292;
+        }}
         .scan-activity-head b{{font-size:8px;color:#35d07f;font-weight:600}}
         .scan-activity.error .scan-activity-head b{{color:#ff6673}}
-        .scan-activity-body{{padding:7px 9px;max-height:195px;overflow:hidden;font-size:9px;line-height:1.55}}
+        .scan-activity-body{{
+            padding:6px 9px;
+            max-height:150px;
+            overflow:hidden;
+            font-size:8px;
+            line-height:1.5;
+        }}
         .scan-log-line{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
         .scan-log-line::before{{content:'› ';color:#4d5968}}
         .scan-activity-body .scan-log-line:last-child{{color:#d6dde6}}
-        @media(max-width:900px){{.scan-activity{{left:auto;right:8px;bottom:8px;width:min(330px,calc(100vw - 16px))}}}}
+
+        /* Give the panel a usable position when the main layout becomes
+           narrow. This prevents it from being clipped by the left sidebar. */
+        @media (max-width:1200px){{
+            .scan-activity{{
+                left:auto;
+                right:10px;
+                bottom:10px;
+                width:290px;
+                max-width:calc(100vw - 20px);
+            }}
+        }}
+        @media (max-width:600px){{
+            .scan-activity{{
+                right:8px;
+                bottom:8px;
+                width:270px;
+                max-width:calc(100vw - 16px);
+                border-radius:6px;
+            }}
+            .scan-activity-head{{padding:5px 8px;font-size:8px}}
+            .scan-activity-head b{{font-size:7px}}
+            .scan-activity-body{{padding:5px 8px;max-height:112px;font-size:7px;line-height:1.45}}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -98,11 +151,11 @@ def install_scan_activity():
                     else:
                         prefix = ".."
                     lines.append(f"{now}  [{prefix}] {msg}")
-                    lines[:] = lines[-12:]
+                    lines[:] = lines[-10:]
                 last_message["value"] = msg
 
-            # NSE bhavcopy is a synchronous request. We can show that the scan
-            # is in the NSE stage, but we do not fabricate byte-level progress.
+            # NSE bhavcopy is a synchronous request. We show the active stage,
+            # but never fabricate byte-level progress.
             if original_callback:
                 if "LOADING LATEST NSE BHAVCOPY" in upper:
                     original_callback(85, 100, "NSE bhavcopy · fetching")
