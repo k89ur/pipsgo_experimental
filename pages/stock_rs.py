@@ -82,6 +82,7 @@ main, side = st.columns([4.7, 1.35], gap="large")
 with side:
     with st.container(border=True):
         st.markdown('<div class="right-title">Scanner status</div>', unsafe_allow_html=True)
+        progress_slot = st.empty()
         status_slot = st.empty()
         stats_slot = st.empty()
 
@@ -121,19 +122,18 @@ if scan_live or scan_eod:
         if NSE_OPEN <= now_ist.time() < NSE_CLOSE:
             status.error("After Market Scan is available after 15:30 IST.")
             st.stop()
-    progress = st.empty()
-    progress.progress(0, text="Starting scan…")
+    progress_slot.progress(0, text="Starting scan…")
     try:
         def stock_update(done, total, label):
             pct = int(done / total * 100) if total else 0
-            progress.progress(pct, text=f"{label} · {done:,}/{total:,}")
+            progress_slot.progress(pct, text=f"{label} · {done:,}/{total:,}")
         with st.spinner("Running stock scan…"):
             df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
         st.session_state.stock_result = df
         st.session_state.stock_stats = stats
-        progress.empty()
+        progress_slot.empty()
     except Exception as e:
-        progress.empty()
+        progress_slot.empty()
         status.error(f"Stock scan failed: {e}")
         st.stop()
 
