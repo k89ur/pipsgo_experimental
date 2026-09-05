@@ -5,19 +5,33 @@ from index_rs_engine import run_index_scan
 if "index_result" not in st.session_state:
     st.session_state.index_result = None
 
-st.markdown('<div class="app-topline"><span>INDEX RELATIVE STRENGTH / DAILY</span><span class="live-state"><span class="live-dot"></span> LIVE DATA</span></div>', unsafe_allow_html=True)
+# UI ONLY: Index RS visual layer. Scanner engine and calculations are unchanged.
+st.markdown("""
+<style>
+.index-ui-brand{display:flex;align-items:center;gap:8px;margin:0 0 18px;font-size:15px;font-weight:800;letter-spacing:.25em;color:#eef2f0}.index-ui-brand-mark{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.5)}
+.index-ui-kicker{font-size:9px;color:#626c69;letter-spacing:.18em;text-transform:uppercase;margin-bottom:7px}.index-ui-title{font-size:28px;font-weight:700;letter-spacing:-.04em;line-height:1.08;color:#eef2f0}.index-ui-subtitle{font-size:10px;color:#737d7a;margin-top:6px}
+.index-ui-scan{margin-top:20px;border-top:1px solid #29302f;border-bottom:1px solid #29302f;padding:11px 0 10px}.index-ui-scan-title{font-size:11px;font-weight:650;color:#dfe5e2}.index-ui-scan-copy{font-size:9px;color:#68726f;margin-top:3px}.index-ui-scan-action{margin-top:9px}
+.index-ui-status{border:1px solid #29302f;background:#0e1213;overflow:hidden}.index-ui-status-head{padding:10px 11px;border-bottom:1px solid #29302f;font-size:8px;color:#626c69;letter-spacing:.16em;text-transform:uppercase}.index-ui-status-state{padding:10px 11px;border-bottom:1px solid #29302f;font-size:10px;font-weight:650;color:#e1e6e4;display:flex;align-items:center;gap:6px}.index-ui-status-dot{width:6px;height:6px;border-radius:50%;background:#48d39a;box-shadow:0 0 7px rgba(72,211,154,.45)}.index-ui-stat{padding:8px 11px;border-bottom:1px solid #202625}.index-ui-stat:last-child{border-bottom:0}.index-ui-stat-label{font-size:7px;color:#596360;letter-spacing:.12em;text-transform:uppercase}.index-ui-stat-value{font-size:10px;color:#d5dbd8;font-weight:600;margin-top:3px}.index-ui-stat-value.green{color:#48d39a}
+.index-ui-leader-label{font-size:8px;color:#626c69;letter-spacing:.16em;text-transform:uppercase;margin:18px 0 7px}.index-ui-leaders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #29302f;border-bottom:1px solid #29302f}.index-ui-leader{padding:10px 12px;border-right:1px solid #29302f;min-width:0}.index-ui-leader:last-child{border-right:0}.index-ui-leader-rank{font-size:8px;color:#596360}.index-ui-leader-main{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px}.index-ui-leader-name{font-size:10px;font-weight:650;color:#e0e5e3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.index-ui-leader-score{font-size:19px;line-height:1;font-weight:750;color:#48d39a}.index-ui-leader-raw{font-size:8px;color:#596360;margin-top:4px}
+@media(max-width:900px){.index-ui-title{font-size:23px}.index-ui-leaders{grid-template-columns:1fr}.index-ui-leader{border-right:0;border-bottom:1px solid #29302f}.index-ui-leader:last-child{border-bottom:0}}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="index-ui-brand"><span class="index-ui-brand-mark"></span><span>PIPSGOX</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="index-ui-kicker">INDEX RELATIVE STRENGTH / DAILY</div>', unsafe_allow_html=True)
+st.markdown('<div class="index-ui-title">Index Relative Strength</div>', unsafe_allow_html=True)
+st.markdown('<div class="index-ui-subtitle">Daily relative-strength ranking across the supported NIFTY index universe</div>', unsafe_allow_html=True)
 
 main, side = st.columns([5.1, 1.05], gap="large")
 with side:
-    status_slot = st.empty()
-    stats_slot = st.empty()
+    st.markdown('<div class="index-ui-status"><div class="index-ui-status-head">Scanner status</div>', unsafe_allow_html=True)
+    status_slot = st.empty(); stats_slot = st.empty()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with main:
-    st.markdown('<div class="page-head"><div><div class="page-title">Index Relative Strength</div><div class="page-sub">Daily relative-strength ranking across the supported NIFTY index universe</div></div></div>', unsafe_allow_html=True)
-    st.markdown('<div class="control-bar">', unsafe_allow_html=True)
-    st.markdown('<div class="control-label">Index scanner</div><div class="control-help">Refresh the current TradingView daily index data and ranking</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    run_index = st.button("▶  Refresh index data", type="primary", use_container_width=False, key="index_refresh")
+    st.markdown('<div class="index-ui-scan"><div class="index-ui-scan-title">Index scanner</div><div class="index-ui-scan-copy">Refresh the current TradingView daily index data and ranking</div><div class="index-ui-scan-action">', unsafe_allow_html=True)
+    run_index = st.button("▶  Refresh index data", type="primary", key="index_refresh")
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
     if run_index or st.session_state.index_result is None:
         progress = status_slot.progress(0, text="Connecting to TradingView…")
@@ -25,33 +39,31 @@ with main:
             def update(done, total, message):
                 pct = min(done / max(total, 1), 1.0)
                 progress.progress(pct, text=f"{message} · {done}/{total}")
-                stats_slot.markdown(f"<div class='status-card'><div class='status-head'>Scanner status</div><div class='status-state'><span class='state-dot'></span>Scanning</div><div class='status-item'><div class='status-label'>Progress</div><div class='status-value'>{pct*100:.0f}%</div></div><div class='status-item'><div class='status-label'>Processed</div><div class='status-value'>{done}/{total}</div></div></div>", unsafe_allow_html=True)
+                stats_slot.markdown(f"<div class='index-ui-status-state'><span class='index-ui-status-dot'></span>Scanning</div><div class='index-ui-stat'><div class='index-ui-stat-label'>Progress</div><div class='index-ui-stat-value'>{pct*100:.0f}%</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Processed</div><div class='index-ui-stat-value'>{done}/{total}</div></div>", unsafe_allow_html=True)
             df, stats = run_index_scan(update)
-            st.session_state.index_result = df
-            st.session_state.index_stats = stats
+            st.session_state.index_result = df; st.session_state.index_stats = stats
             progress.progress(1.0, text="Scan complete")
         except Exception as e:
             progress.empty(); status_slot.error("Scan failed"); st.error(f"TradingView data refresh failed: {e}")
 
     df = st.session_state.index_result
     if df is None:
-        status_slot.markdown('<div class="status-card"><div class="status-head">Scanner status</div><div class="status-state"><span class="state-dot"></span>Waiting for scan</div></div>', unsafe_allow_html=True)
-        st.markdown('<div class="empty-state"><div class="empty-title">Ready to scan</div><div class="empty-sub">Refresh the index universe to calculate current relative strength.</div></div>', unsafe_allow_html=True)
+        status_slot.markdown('<div class="index-ui-status-state"><span class="index-ui-status-dot"></span>Waiting for scan</div>', unsafe_allow_html=True)
+        stats_slot.markdown('<div class="index-ui-stat"><div class="index-ui-stat-label">Status</div><div class="index-ui-stat-value">Ready</div></div>', unsafe_allow_html=True)
     else:
-        stats = st.session_state.get("index_stats", {})
-        valid = df[df["Raw RS"].notna()].copy()
+        stats = st.session_state.get("index_stats", {}); valid = df[df["Raw RS"].notna()].copy()
         strong = int((valid["RS 1-99"] >= 80).sum()); middle = int(((valid["RS 1-99"] >= 50) & (valid["RS 1-99"] < 80)).sum()); weak = int((valid["RS 1-99"] < 50).sum())
         asof = stats.get("benchmark_latest", stats.get("as_of")); asof_text = asof.strftime("%d %b %Y") if hasattr(asof, "strftime") else "—"
         unavailable = int(stats.get("unavailable_count", int(df["Latest Date"].isna().sum())))
         stale = int(stats.get("stale_count", 0)); insufficient = int((df["Latest Date"].notna() & df["Raw RS"].isna()).sum())
-        status_slot.markdown(f"<div class='status-card'><div class='status-head'>Scanner status</div><div class='status-state'><span class='state-dot'></span>Scan complete</div><div class='status-item'><div class='status-label'>Latest</div><div class='status-value'>{asof_text}</div></div><div class='status-item'><div class='status-label'>Universe</div><div class='status-value'>{stats.get('universe',28)}</div></div><div class='status-item'><div class='status-label'>Calculated</div><div class='status-value strong'>{stats.get('available',0)}</div></div><div class='status-item'><div class='status-label'>Stale</div><div class='status-value'>{stale}</div></div><div class='status-item'><div class='status-label'>Insufficient</div><div class='status-value'>{insufficient}</div></div><div class='status-item'><div class='status-label'>Unavailable</div><div class='status-value'>{unavailable}</div></div><div class='status-item'><div class='status-label'>Strong 80+</div><div class='status-value strong'>{strong}</div></div></div>", unsafe_allow_html=True)
+        status_slot.markdown(f"<div class='index-ui-status-state'><span class='index-ui-status-dot'></span>Scan complete</div><div class='index-ui-stat'><div class='index-ui-stat-label'>Latest</div><div class='index-ui-stat-value'>{asof_text}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Universe</div><div class='index-ui-stat-value'>{stats.get('universe',28)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Calculated</div><div class='index-ui-stat-value green'>{stats.get('available',0)}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Stale</div><div class='index-ui-stat-value'>{stale}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Insufficient</div><div class='index-ui-stat-value'>{insufficient}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Unavailable</div><div class='index-ui-stat-value'>{unavailable}</div></div><div class='index-ui-stat'><div class='index-ui-stat-label'>Strong 80+</div><div class='index-ui-stat-value green'>{strong}</div></div></div>", unsafe_allow_html=True)
 
         top = valid.head(3)
         if len(top):
             cards=[]
             for i, (_, row) in enumerate(top.iterrows(),1):
-                score=int(row["RS 1-99"]); cards.append(f"<div class='leader-item'><div class='leader-top'><span class='leader-rank'>0{i}</span><span class='leader-score'>{score}</span></div><div class='leader-name'>{row['INDEX']}</div><div class='leader-meta'>Raw RS {row['Raw RS']:.2f}</div></div>")
-            st.markdown('<div class="leader-strip">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+                score=int(row["RS 1-99"]); cards.append(f"<div class='index-ui-leader'><div class='index-ui-leader-rank'>0{i}</div><div class='index-ui-leader-main'><div class='index-ui-leader-name'>{row['INDEX']}</div><div class='index-ui-leader-score'>{score}</div></div><div class='index-ui-leader-raw'>Raw RS {row['Raw RS']:.2f}</div></div>")
+            st.markdown('<div class="index-ui-leader-label">Top relative strength</div><div class="index-ui-leaders">'+''.join(cards)+'</div>',unsafe_allow_html=True)
 
         st.markdown(f'<div class="results-head"><div class="results-title">Results <span class="results-count">{len(valid):,}</span></div></div>',unsafe_allow_html=True)
         search_col, filter_col = st.columns([2.8,1.7])
