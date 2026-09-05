@@ -33,30 +33,6 @@ def refresh_market_data_dialog():
         if st.button("Cancel", use_container_width=True, key="cancel_stock_refresh"):
             st.rerun()
 
-@st.dialog("Full table view", width="large")
-def full_stock_table_dialog(data):
-    st.dataframe(
-        data,
-        use_container_width=True,
-        hide_index=True,
-        height=680,
-        column_config={
-            "S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"),
-            "Symbol": st.column_config.TextColumn("SYMBOL"),
-            "Index": st.column_config.TextColumn("INDEX"),
-            "Industry": st.column_config.TextColumn("INDUSTRY"),
-            "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"),
-            "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"),
-            "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"),
-            "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"),
-            "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"),
-            "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"),
-            "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"),
-            "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"),
-            "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
-        },
-    )
-
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable scan filters</div></div>', unsafe_allow_html=True)
 
@@ -201,19 +177,15 @@ with main:
             return styles
         table_head, view_action, download_action, full_action = st.columns([7.8, 0.7, 0.7, 0.7], gap="small")
         with table_head:
-            st.markdown('<div style="height:1.9rem"></div>', unsafe_allow_html=True)
+            st.markdown('<div style="height:1.45rem"></div>', unsafe_allow_html=True)
         with view_action:
-            if st.button("", icon=":material/view_column:", type="tertiary", width=32, help="View columns", key="stock_view_columns"):
-                st.session_state["stock_open_columns"] = True
-        with download_action:
-            st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", type="tertiary", width=32, key="stock_download_csv", help="Download full table CSV")
-        with full_action:
-            if st.button("", icon=":material/fullscreen:", type="tertiary", width=32, help="Full table view", key="stock_full_table"):
-                full_stock_table_dialog(full_table)
-        if st.session_state.pop("stock_open_columns", False):
-            with st.popover("Table columns", width="content"):
+            with st.popover("", icon=":material/view_column:", width="content", help="View columns"):
                 st.caption("Select columns")
                 st.multiselect("Show columns", all_columns, default=saved_columns, label_visibility="collapsed", key="stock_columns")
+        with download_action:
+            st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", "text/csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
+        with full_action:
+            st.page_link("pages/full_stock_table.py", label="", icon=":material/fullscreen:", width="content", help="Full table view")
         st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config={"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")})
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
