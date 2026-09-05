@@ -1,4 +1,5 @@
 import streamlit as st
+from scan_activity import install_scan_activity
 
 st.set_page_config(page_title="PipsGo RS Scanner", page_icon="↗", layout="wide", initial_sidebar_state="expanded")
 
@@ -16,7 +17,6 @@ st.markdown("""
 .empty-state{background:var(--panel);border:1px dashed var(--line);border-radius:11px;padding:1.5rem;margin-top:.8rem}.empty-title{font-weight:650}.empty-sub,.help{color:var(--muted);font-size:.68rem;line-height:1.45;margin-top:.25rem}
 [data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:10px;overflow:hidden}[data-testid="stDataFrame"] [role="columnheader"]{background:var(--panel2)}
 .table-tools{display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin:0 0 .3rem}.table-tools [data-testid="stButton"] button,.table-tools [data-testid="stDownloadButton"] button{min-height:2rem;height:2rem;padding:.2rem .55rem;border:1px solid var(--line);background:var(--panel);color:#a7b0bd;border-radius:7px;font-size:.72rem}.table-tools [data-testid="stButton"] button:hover,.table-tools [data-testid="stDownloadButton"] button:hover{color:var(--text);border-color:#3b4655;background:var(--panel2)}
-/* Small table actions: never let narrow columns make Streamlit buttons tall or wrap. */
 .table-action-row [data-testid="stPopover"]>button,.table-action-row [data-testid="stPopover"] button{width:100%;min-width:0;min-height:1.85rem;height:1.85rem;padding:.18rem .38rem;border:1px solid var(--line);background:var(--panel);color:#a7b0bd;border-radius:7px;font-size:.72rem;line-height:1;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden}.table-action-row [data-testid="stPopover"] button:hover{color:var(--text);border-color:#3b4655;background:var(--panel2)}
 .table-action-row [data-testid="stDownloadButton"] button{width:100%;min-width:0;min-height:1.85rem;height:1.85rem;padding:.18rem .42rem;border-radius:7px;border:1px solid #2e9e68;background:#35d07f;color:#07110c;font-weight:700;font-size:.68rem;box-shadow:none;white-space:nowrap;display:flex;align-items:center;justify-content:space-between;gap:.25rem;line-height:1}.table-action-row [data-testid="stDownloadButton"] button:hover{background:#4be28f;border-color:#4be28f;color:#07110c}.table-action-row [data-testid="stDownloadButton"] button svg{order:2;margin-left:auto;width:.78rem;height:.78rem;flex:0 0 auto}.table-action-row [data-testid="stDownloadButton"] button p{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 [data-testid="stDownloadButton"] button{border-radius:7px;border:1px solid #2e9e68;background:#35d07f;color:#07110c;font-weight:700;min-height:2rem;height:2rem;padding:.15rem .6rem;box-shadow:none;white-space:nowrap;display:flex;align-items:center;justify-content:space-between;gap:.7rem}[data-testid="stDownloadButton"] button:hover{background:#4be28f;border-color:#4be28f;color:#07110c}
@@ -25,6 +25,8 @@ st.markdown("""
 @media(max-width:900px){.block-container{padding:2.7rem .7rem 2rem}.leader-grid{grid-template-columns:1fr}.page-title{font-size:1.55rem}.page-brand{height:30px;font-size:1.02rem}.table-action-row [data-testid="stPopover"]>button,.table-action-row [data-testid="stPopover"] button{min-height:1.75rem;height:1.75rem}.table-action-row [data-testid="stDownloadButton"] button{min-height:1.75rem;height:1.75rem}}
 </style>
 """, unsafe_allow_html=True)
+
+install_scan_activity()
 
 index_page = st.Page("pages/index_rs.py", title="Index RS", icon=":material/leaderboard:", url_path="index-rs", default=True)
 stock_page = st.Page("pages/stock_rs.py", title="Stock RS + Technical", icon=":material/query_stats:", url_path="stock-rs")
