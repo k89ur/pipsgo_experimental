@@ -10,8 +10,19 @@ import streamlit as st
 IST = ZoneInfo("Asia/Kolkata")
 
 
+def _hide_old_activity():
+    """Hide any activity panel rendered by a previous rerun."""
+    st.markdown(
+        "<style>.scan-activity{display:none!important}</style>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render(slot, lines, status="RUNNING", error=False):
-    body = "".join(f"<div class='scan-log-line'>{html.escape(line)}</div>" for line in lines[-12:])
+    body = "".join(
+        f"<div class='scan-log-line'>{html.escape(line)}</div>"
+        for line in lines[-12:]
+    )
     status_class = "error" if error else ("done" if status == "COMPLETE" else "live")
     slot.markdown(
         f"""
@@ -20,7 +31,7 @@ def _render(slot, lines, status="RUNNING", error=False):
           <div class='scan-activity-body'>{body}</div>
         </div>
         <style>
-        .scan-activity{{position:fixed;right:16px;bottom:16px;width:min(350px,calc(100vw - 32px));z-index:999999;background:#090d12;border:1px solid #27313d;border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.42);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#aeb8c5;overflow:hidden}}
+        .scan-activity{{position:fixed;left:16px;bottom:16px;width:240px;z-index:999999;background:#090d12;border:1px solid #27313d;border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.42);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#aeb8c5;overflow:hidden}}
         .scan-activity-head{{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-bottom:1px solid #202934;background:#0d131a;font-size:9px;letter-spacing:.10em;color:#778292}}
         .scan-activity-head b{{font-size:8px;color:#35d07f;font-weight:600}}
         .scan-activity.error .scan-activity-head b{{color:#ff6673}}
@@ -28,7 +39,7 @@ def _render(slot, lines, status="RUNNING", error=False):
         .scan-log-line{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
         .scan-log-line::before{{content:'› ';color:#4d5968}}
         .scan-activity-body .scan-log-line:last-child{{color:#d6dde6}}
-        @media(max-width:700px){{.scan-activity{{right:8px;bottom:8px;width:calc(100vw - 16px)}}}}
+        @media(max-width:900px){{.scan-activity{{left:auto;right:8px;bottom:8px;width:min(330px,calc(100vw - 16px))}}}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -38,6 +49,11 @@ def _render(slot, lines, status="RUNNING", error=False):
 def install_scan_activity():
     """Install a small live terminal-style monitor around the existing stock scan."""
     import rs_engine
+
+    # Every Streamlit rerun starts with a clean visual state. This also removes
+    # a completed/error panel left behind by a Refresh Data rerun.
+    _hide_old_activity()
+    st.session_state["_scan_activity_active"] = False
 
     if getattr(rs_engine, "_scan_activity_installed", False):
         return
@@ -51,40 +67,10 @@ def install_scan_activity():
         mode = str(kwargs.get("snapshot_mode", "eod")).upper()
         lines.append(f"{datetime.now(IST):%H:%M:%S}  [START] {mode} scan")
         _render(slot, lines)
+        st.session_state["_scan_activity_active"] = True
 
         original_callback = kwargs.get("progress_callback")
         last_message = {"value": ""}
-        original_yf_download = rs_engine.yf.download
-
-        def log_download(tickers):
-            if isinstance(tickers, str):
-                values = [tickers]
-            else:
-                values = list(tickers)
-            symbols = [str(t).replace(".NS", "") for t in values]
-            if not symbols:
-                return
-            sample = symbols[:2]
-            if len(symbols) > 4:
-                sample += ["…"] + symbols[-2:]
-            lines.append(
-                f"{datetime.now(IST):%H:%M:%S}  [DATA] Download batch · {len(symbols)} tickers · {', '.join(sample)}"
-            )
-            lines[:] = lines[-12:]
-            _render(slot, lines)
-
-        def monitored_yf_download(*yf_args, **yf_kwargs):
-            tickers = yf_kwargs.get("tickers")
-            if tickers is None and yf_args:
-                tickers = yf_args[0]
-            log_download(tickers)
-            return original_yf_download(*yf_args, **yf_kwargs)
-
-        # This hooks the existing bulk yfinance calls without changing the
-        # scanner's batch size or download strategy. It shows the actual ticker
-        # batch requested; it does not pretend to know which ticker a provider
-        # thread is downloading internally.
-        rs_engine.yf.download = monitored_yf_download
 
         def activity_callback(done, total, message):
             msg = str(message)
@@ -115,10 +101,8 @@ def install_scan_activity():
                     lines[:] = lines[-12:]
                 last_message["value"] = msg
 
-            # The NSE bhavcopy is a synchronous request, so there is no honest
-            # byte-level percentage available. Keep the main progress bar at a
-            # visible stage position while the request is in flight instead of
-            # showing 0% and then jumping straight to 100%.
+            # NSE bhavcopy is a synchronous request. We can show that the scan
+            # is in the NSE stage, but we do not fabricate byte-level progress.
             if original_callback:
                 if "LOADING LATEST NSE BHAVCOPY" in upper:
                     original_callback(85, 100, "NSE bhavcopy · fetching")
@@ -147,7 +131,7 @@ def install_scan_activity():
             else:
                 lines.append(f"{datetime.now(IST):%H:%M:%S}  [OK] Missing symbols · 0")
             if short_history:
-                lines.append(f"{datetime.now(IST):%H:%M:%S}  [WARN] {short_history} short/stale history symbols")
+                lines.append(f"{datetime.now(IST):%H:%M:%S}  [WARN] {short_history} short/unusable history symbols")
             lines.append(f"{datetime.now(IST):%H:%M:%S}  [OK] Results ready · {matches} matches · {elapsed:.1f}s")
             _render(slot, lines, status="COMPLETE")
             return result
@@ -156,7 +140,7 @@ def install_scan_activity():
             _render(slot, lines, status="ERROR", error=True)
             raise
         finally:
-            rs_engine.yf.download = original_yf_download
+            st.session_state["_scan_activity_active"] = False
 
     rs_engine.run_scan = wrapped_run_scan
     rs_engine._scan_activity_installed = True
