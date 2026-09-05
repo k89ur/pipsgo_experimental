@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import re
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -55,6 +54,37 @@ def install_scan_activity():
 
         original_callback = kwargs.get("progress_callback")
         last_message = {"value": ""}
+        original_yf_download = rs_engine.yf.download
+
+        def log_download(tickers):
+            if isinstance(tickers, str):
+                values = [tickers]
+            else:
+                values = list(tickers)
+            symbols = [str(t).replace(".NS", "") for t in values]
+            if not symbols:
+                return
+            sample = symbols[:2]
+            if len(symbols) > 4:
+                sample += ["…"] + symbols[-2:]
+            lines.append(
+                f"{datetime.now(IST):%H:%M:%S}  [DATA] Download batch · {len(symbols)} tickers · {', '.join(sample)}"
+            )
+            lines[:] = lines[-12:]
+            _render(slot, lines)
+
+        def monitored_yf_download(*yf_args, **yf_kwargs):
+            tickers = yf_kwargs.get("tickers")
+            if tickers is None and yf_args:
+                tickers = yf_args[0]
+            log_download(tickers)
+            return original_yf_download(*yf_args, **yf_kwargs)
+
+        # This hooks the existing bulk yfinance calls without changing the
+        # scanner's batch size or download strategy. It shows the actual ticker
+        # batch requested; it does not pretend to know which ticker a provider
+        # thread is downloading internally.
+        rs_engine.yf.download = monitored_yf_download
 
         def activity_callback(done, total, message):
             msg = str(message)
@@ -108,10 +138,6 @@ def install_scan_activity():
             missing = int(stats.get("missing_count", 0) or 0)
             short_history = int(stats.get("short_history_count", 0) or 0)
 
-            # Always record data-integrity diagnostics in the activity log.
-            # The detailed stale/date-distribution diagnostics remain available
-            # in the Stock RS page; they are intentionally not removed when the
-            # current scan has zero stale symbols.
             if stale:
                 lines.append(f"{datetime.now(IST):%H:%M:%S}  [WARN] {stale} stale symbols remain")
             else:
@@ -129,6 +155,8 @@ def install_scan_activity():
             lines.append(f"{datetime.now(IST):%H:%M:%S}  [ERROR] {type(exc).__name__}: {exc}")
             _render(slot, lines, status="ERROR", error=True)
             raise
+        finally:
+            rs_engine.yf.download = original_yf_download
 
     rs_engine.run_scan = wrapped_run_scan
     rs_engine._scan_activity_installed = True
