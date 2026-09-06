@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 import rs_engine
-from nse_latest_data import install_nse_latest_close, source_check
+from nse_latest_data import install_nse_latest_close, source_check, eod_scan_market_open
 from snapshot_cache import install as install_persistent_snapshot
 
 install_nse_latest_close(rs_engine)
@@ -116,10 +116,13 @@ with main:
 
 if scan_live or scan_eod:
     mode = "intraday" if scan_live else "eod"
-    now_ist = datetime.now(IST)
     if mode == "eod":
-        if NSE_OPEN <= now_ist.time() < NSE_CLOSE:
-            status.error("After Market Scan is available after 15:30 IST.")
+        try:
+            if eod_scan_market_open():
+                status.error("After Market Scan is unavailable while the NSE Capital Market session is running.")
+                st.stop()
+        except Exception as e:
+            status.error(f"Unable to verify NSE Capital Market session status. After Market Scan is blocked for safety. ({e})")
             st.stop()
     progress_slot.progress(0, text="Starting scan…")
     try:
