@@ -215,7 +215,7 @@ with main:
         with download_action:
             st.download_button("", full_table.to_csv(index=False).encode("utf-8"), "nse_stock_rs_scan.csv", icon=":material/download:", type="tertiary", width=28, key="stock_download_csv", help="Download full table CSV")
         with full_action:
-            if st.button("", icon=":material/fullscreen:", type="tertiary", width=28, key="stock_full_table", help="Full table view"):
+            if st.button("", icon=":material/fullscreen:", type="tertiary", width=28, key="stock_fullscreen_action", help="Full table view"):
                 st.session_state.stock_full_table = True
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
