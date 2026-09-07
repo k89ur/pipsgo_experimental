@@ -136,7 +136,11 @@ if scan_live or scan_eod:
         progress_slot.empty()
     except Exception as e:
         progress_slot.empty()
-        status.error(f"Stock scan failed: {e}")
+        message = str(e)
+        if mode == "eod" and "Today's NSE EOD bhavcopy is not available yet" in message:
+            status.warning("After Market Scan data is not available yet. NSE has not published today's EOD market data. Please try again after the EOD data is released.")
+        else:
+            status.error(f"Stock scan failed: {e}")
         st.stop()
 
 with main:
