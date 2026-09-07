@@ -80,6 +80,8 @@ def _clean_history(frame: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
     x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
+    if "High" in x.columns:
+        x["High"] = pd.to_numeric(x["High"], errors="coerce")
     x = x.replace([np.inf, -np.inf], np.nan)
     x = x[x["Close"] > 0]
     return x
@@ -315,7 +317,7 @@ def _return_at_days(close: pd.Series, days: int) -> float:
     return (now / old - 1.0) * 100.0 if old else np.nan
 
 
-def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising: bool = False) -> dict:
+def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising: bool = False, snapshot_mode: str = "eod") -> dict:
     close = x["Close"].dropna().astype(float)
     if len(close) < 200:
         return {}
@@ -323,8 +325,19 @@ def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising
     d50 = close.rolling(50).mean()
     d150 = close.rolling(150).mean()
     d200 = close.rolling(200).mean()
-    high_52w = float(close.tail(252).max())
-    from_high = (high_52w - ltp) / high_52w * 100.0 if high_52w else np.nan
+
+    if str(snapshot_mode).lower().strip() == "intraday" and "High" in x.columns:
+        high = x["High"].dropna().astype(float)
+        if len(high) < 253:
+            return {}
+        previous_52w_high = float(high.iloc[-253:-1].max())
+        today_high = float(high.iloc[-1])
+        high_52w = previous_52w_high
+        from_high = (today_high - previous_52w_high) / previous_52w_high * 100.0 if previous_52w_high else np.nan
+    else:
+        high_52w = float(close.tail(252).max())
+        from_high = (high_52w - ltp) / high_52w * 100.0 if high_52w else np.nan
+
     row = {
         "Symbol": symbol,
         "LTP": ltp,
@@ -430,7 +443,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         if symbol in stale_set:
             continue
         try:
-            m = _metrics(symbol, x, rising_days, calculate_ma_rising=use_ma_rising)
+            m = _metrics(symbol, x, rising_days, calculate_ma_rising=use_ma_rising, snapshot_mode=snapshot_mode)
             if m:
                 rows.append(m)
         except Exception:
@@ -445,7 +458,10 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_min_price:
         df = df[df["LTP"] >= min_price].copy()
     if use_near_high:
-        df = df[df["From 52W High %"] <= near_high_pct].copy()
+        if str(snapshot_mode).lower().strip() == "intraday":
+            df = df[df["From 52W High %"] >= -near_high_pct].copy()
+        else:
+            df = df[df["From 52W High %"] <= near_high_pct].copy()
     if use_min_rs:
         df = df[df["RS Rating"] >= min_rs].copy()
     if use_minervini:
