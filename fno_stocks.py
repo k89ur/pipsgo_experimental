@@ -18,11 +18,22 @@ def load_fno_symbols(timeout=15):
 
 
 def filter_fno_results(df, timeout=15):
-    """Return rows from an existing scan result that are present in the F&O list."""
+    """Partition an existing scan result into non-F&O main rows and F&O rows.
+
+    The returned dataframe contains the F&O subset. The original scan dataframe
+    is reduced in place to the non-F&O subset so the existing Main Results view
+    automatically excludes stocks shown in the F&O table.
+    """
     if df is None:
         return pd.DataFrame()
     if df.empty:
         return df.copy()
+
     symbols = load_fno_symbols(timeout=timeout)
     normalized = df["Symbol"].astype(str).str.strip().str.upper()
-    return df.loc[normalized.isin(symbols)].copy()
+    fno_mask = normalized.isin(symbols)
+    fno_result = df.loc[fno_mask].copy()
+
+    # Keep the existing scan dataframe object, but partition its result rows.
+    df.drop(index=df.index[fno_mask], inplace=True)
+    return fno_result
