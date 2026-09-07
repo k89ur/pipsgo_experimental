@@ -187,15 +187,21 @@ if scan_live or scan_eod:
             pct = int(done / total * 100) if total else 0
             progress_slot.progress(pct, text=f"{label} · {done:,}/{total:,}")
         with st.spinner("Running stock scan…"):
-            df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
-        st.session_state.stock_result = df
-        st.session_state.stock_stats = stats
+            scan_df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
+        total_matches = len(scan_df)
         try:
-            st.session_state.fno_result = filter_fno_results(df)
+            fno_df = filter_fno_results(scan_df)
+            fno_symbols = set(fno_df["Symbol"].astype(str).str.strip().str.upper()) if fno_df is not None and not fno_df.empty else set()
+            df = scan_df.loc[~scan_df["Symbol"].astype(str).str.strip().str.upper().isin(fno_symbols)].copy()
+            st.session_state.fno_result = fno_df
             st.session_state.fno_error = None
         except Exception:
+            df = scan_df.copy()
             st.session_state.fno_result = pd.DataFrame()
             st.session_state.fno_error = "F&O list is currently unavailable. Main Results are unaffected."
+        st.session_state.stock_result = df
+        st.session_state.stock_stats = stats
+        st.session_state.stock_stats["total_matches"] = total_matches
         st.session_state.fno_full_table = False
         st.session_state.pop("fno_columns", None)
         progress_slot.empty()
@@ -212,7 +218,7 @@ with main:
     stats = st.session_state.get("stock_stats")
     df = st.session_state.stock_result
     if stats and df is not None:
-        matches = len(df)
+        matches = stats.get("total_matches", len(df))
         coverage = stats.get("coverage", 0.0)
         near = int((df["From 52W High %"] <= near_high).sum()) if matches and use_near_high else 0
         strong = int((df["RS Rating"] >= min_rs).sum()) if matches and use_min_rs else 0
