@@ -326,7 +326,7 @@ def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising
     d150 = close.rolling(150).mean()
     d200 = close.rolling(200).mean()
 
-    if str(snapshot_mode).lower().strip() == "intraday" and "High" in x.columns:
+    if "High" in x.columns:
         high = x["High"].dropna().astype(float)
         if len(high) < 253:
             return {}
@@ -458,10 +458,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_min_price:
         df = df[df["LTP"] >= min_price].copy()
     if use_near_high:
-        if str(snapshot_mode).lower().strip() == "intraday":
-            df = df[df["From 52W High %"] >= -near_high_pct].copy()
-        else:
-            df = df[df["From 52W High %"] <= near_high_pct].copy()
+        df = df[df["From 52W High %"] >= -near_high_pct].copy()
     if use_min_rs:
         df = df[df["RS Rating"] >= min_rs].copy()
     if use_minervini:
