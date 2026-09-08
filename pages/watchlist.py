@@ -52,7 +52,6 @@ if not symbol:
 
 st.query_params["symbol"] = symbol
 
-
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_screener(stock):
     return fetch_screener(stock)
@@ -68,6 +67,22 @@ def cached_deals(stock):
     return fetch_nse_deals(stock)
 
 
+def _unique_columns(frame):
+    """Make dataframe column labels unique for Streamlit/PyArrow."""
+    if frame.empty:
+        return frame
+    result = frame.copy()
+    seen = {}
+    columns = []
+    for column in result.columns:
+        name = str(column)
+        count = seen.get(name, 0)
+        seen[name] = count + 1
+        columns.append(name if count == 0 else f"{name}.{count}")
+    result.columns = columns
+    return result
+
+
 try:
     with st.spinner(f"Loading {symbol} Insights…"):
         screener = cached_screener(symbol)
@@ -81,18 +96,11 @@ company_name = screener.get("company_name") or symbol
 sector = nse.get("sector") or screener.get("sector") or "—"
 industry = nse.get("industry") or screener.get("industry") or "—"
 
-if not nse.get("nse_available", False):
-    st.caption("NSE quote API is blocking the app server. Core quote fields are temporarily using the Screener fallback; the scanner is unaffected.")
-
 st.markdown(
     f'<div class="page-head"><div class="page-title">{company_name}</div>'
     f'<div class="page-sub">{symbol} · {sector} · {industry}</div></div>',
     unsafe_allow_html=True,
 )
-
-# -----------------------------------------------------------------------------
-# Snapshot
-# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Valuation & company snapshot</div>', unsafe_allow_html=True)
 c1, c2, c3, c4, c5 = st.columns(5, gap="small")
@@ -108,10 +116,6 @@ with c4:
 with c5:
     st.metric("52W Low", f"₹{nse.get('52w_low'):,.2f}" if nse.get("52w_low") is not None else "—")
 
-# -----------------------------------------------------------------------------
-# Growth + margin chart
-# -----------------------------------------------------------------------------
-
 growth = screener.get("growth")
 if isinstance(growth, pd.DataFrame) and not growth.empty:
     st.markdown('<div class="section-title">Growth & margin trend · quarterly YoY</div>', unsafe_allow_html=True)
@@ -122,14 +126,7 @@ if isinstance(growth, pd.DataFrame) and not growth.empty:
 else:
     st.info("Quarterly growth history is not available from Screener for this company.")
 
-# -----------------------------------------------------------------------------
-# Deals
-# -----------------------------------------------------------------------------
-
 st.markdown('<div class="section-title">Institutional / large deals · NSE</div>', unsafe_allow_html=True)
-if not deals.get("nse_available", False):
-    st.caption("NSE large-deal feed is currently blocked from this app server. No deal is shown rather than using an unverified source.")
-
 bulk, block = st.columns(2, gap="large")
 with bulk:
     st.markdown("**Bulk deals**")
@@ -138,7 +135,7 @@ with bulk:
         st.caption("No NSE bulk deal data available for this symbol right now.")
     else:
         cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in bulk_df.columns]
-        st.dataframe(bulk_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(bulk_df) * 36))
+        st.dataframe(_unique_columns(bulk_df[cols]), use_container_width=True, hide_index=True, height=min(300, 70 + len(bulk_df) * 36))
 with block:
     st.markdown("**Block deals**")
     block_df = deals.get("block", pd.DataFrame())
@@ -146,22 +143,14 @@ with block:
         st.caption("No NSE block deal data available for this symbol right now.")
     else:
         cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in block_df.columns]
-        st.dataframe(block_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
-
-# -----------------------------------------------------------------------------
-# Shareholders
-# -----------------------------------------------------------------------------
+        st.dataframe(_unique_columns(block_df[cols]), use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
 
 st.markdown('<div class="section-title">Shareholders</div>', unsafe_allow_html=True)
 shareholders = screener.get("shareholders")
 if isinstance(shareholders, pd.DataFrame) and not shareholders.empty:
-    st.dataframe(shareholders, use_container_width=True, hide_index=True, height=300)
+    st.dataframe(_unique_columns(shareholders), use_container_width=True, hide_index=True, height=300)
 else:
     st.info("Shareholding pattern is not available from the Screener company page.")
-
-# -----------------------------------------------------------------------------
-# Market position + peers
-# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Market position</div>', unsafe_allow_html=True)
 left, right = st.columns([1.15, 2.85], gap="large")
@@ -182,16 +171,12 @@ with left:
 with right:
     peers = screener.get("peers")
     if isinstance(peers, pd.DataFrame) and not peers.empty:
-        peer_display = peers.copy()
+        peer_display = _unique_columns(peers.copy())
         first_col = peer_display.columns[0]
         peer_display = peer_display.rename(columns={first_col: "Company"})
         st.dataframe(peer_display, use_container_width=True, hide_index=True, height=330)
     else:
         st.info("Peer comparison is not available from Screener for this company.")
-
-# -----------------------------------------------------------------------------
-# Website
-# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Company website</div>', unsafe_allow_html=True)
 website = screener.get("website")
@@ -200,4 +185,4 @@ if website:
 else:
     st.caption("Company website was not available in the Screener listing.")
 
-st.caption("Sources: NSE India when its public feed is available; Screener.in for valuation, financial trends, shareholding, peers and fallback quote data. NSE large deals are shown only from the NSE feed.")
+st.caption("Sources: NSE India for market classification, quote data and large deals; Screener.in for valuation, financial trends, shareholding, peers and company website. Data is fetched on demand and cached briefly.")
