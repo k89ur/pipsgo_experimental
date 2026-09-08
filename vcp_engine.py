@@ -35,7 +35,7 @@ def _trend_ok(x):
     return bool(c.iloc[-1] > m50.iloc[-1] > m150.iloc[-1] > m200.iloc[-1])
 
 
-def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max=25., final_max=5., final_min_tightness=0., volume_required=True, near_high_pct=7., min_price=100., min_avg_volume=0., trend_filter=True, near_pivot_pct=5., breakout_already_occurred=False, quality="Standard"):
+def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max=25., final_max=5., final_min_tightness=0., volume_required=True, near_high_pct=7., min_price=100., min_avg_volume=0., trend_filter=True, near_pivot_pct=5., breakout_already_occurred=False, quality="Standard", final_contraction_max_age=20):
     x = _clean(frame)
     if len(x) < 253:
         return {}
@@ -50,7 +50,6 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
     if seq:
         depths = [c["depth"] for c in seq]
         vols = [c["avg_volume"] for c in seq]
-        # The active pivot is the highest recovery high in the selected contraction chain.
         pivot = max(c["recovery_high"] for c in seq)
         pdist = (pivot - close) / pivot * 100 if pivot else np.nan
         final = depths[-1]
@@ -58,10 +57,16 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
         bo = breakout_info(close, pivot, seq)
         breakout, breakout_status = bo["breakout"], bo["status"]
         finaltight = final_min_tightness <= final <= final_max
+        # Require the latest/qualifying contraction to have started recently.
+        # The age is measured in trading bars from its starting swing high to the latest bar.
+        final_age = max(0, len(x) - 1 - int(seq[-1]["high_i"]))
+        recent_final = final_age <= int(final_contraction_max_age)
         stage = {2: "Early", 3: "Developing", 4: "Mature"}.get(len(seq), "VCP")
     else:
         depths = []
         pivot = pdist = final = np.nan
+        final_age = np.nan
+        recent_final = False
         volcontract = breakout = finaltight = False
         stage = "—"
         breakout_status = "No VCP"
@@ -71,7 +76,7 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
     highok = from52 >= -near_high_pct
     pivotok = bool(np.isfinite(pdist) and pdist <= near_pivot_pct and pdist >= -25)
     breakoutok = breakout if breakout_already_occurred else not breakout
-    qualified = bool(seq and finaltight and (volcontract if volume_required else True) and close >= min_price and avgvol >= min_avg_volume and highok and pivotok and breakoutok and (trend or not trend_filter))
+    qualified = bool(seq and recent_final and finaltight and (volcontract if volume_required else True) and close >= min_price and avgvol >= min_avg_volume and highok and pivotok and breakoutok and (trend or not trend_filter))
     score = min(30, len(seq) * 10) + (20 if depths and all(depths[i + 1] <= depths[i] * 1.10 for i in range(len(depths) - 1)) else 0) + (20 if finaltight else 0) + (15 if volcontract else 0) + (10 if trend else 0) + (5 if pivotok else 0)
 
     return {
@@ -79,7 +84,8 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
         "VCP Stage": stage, "Contractions": len(seq),
         "C1 %": depths[0] if depths else np.nan, "C2 %": depths[1] if len(depths) > 1 else np.nan,
         "C3 %": depths[2] if len(depths) > 2 else np.nan, "C4 %": depths[3] if len(depths) > 3 else np.nan,
-        "Final Contraction %": final, "Pivot": pivot, "From Pivot %": pdist,
+        "Final Contraction %": final, "Final Contraction Age": final_age,
+        "Pivot": pivot, "From Pivot %": pdist,
         "52W High": prior, "From 52W High %": from52, "Avg Volume 50D": avgvol,
         "Volume Contracting": volcontract, "Trend OK": trend, "Breakout": breakout,
         "Breakout Status": breakout_status, "Breakout Contractions": bo["breakout_contractions"],
@@ -87,13 +93,13 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
     }
 
 
-def run_scan(min_contractions=2, max_contractions=4, first_max=25., final_max=5., final_min_tightness=0., volume_required=True, near_high_pct=7., min_price=100., min_avg_volume=0., trend_filter=True, near_pivot_pct=5., breakout_already_occurred=False, quality="Standard", batch_size=DEFAULT_BATCH_SIZE, snapshot_mode="eod", force_refresh=False, progress_callback: Optional[Callable] = None):
+def run_scan(min_contractions=2, max_contractions=4, first_max=25., final_max=5., final_min_tightness=0., volume_required=True, near_high_pct=7., min_price=100., min_avg_volume=0., trend_filter=True, near_pivot_pct=5., breakout_already_occurred=False, quality="Standard", final_contraction_max_age=20, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode="eod", force_refresh=False, progress_callback: Optional[Callable] = None):
     symbols = rs_engine.get_nse_symbols()
     snap = rs_engine._download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback)
     rows = []
     for done, (symbol, frame) in enumerate(snap["data"].items(), 1):
         try:
-            r = analyze_vcp(symbol, frame, min_contractions, max_contractions, first_max, final_max, final_min_tightness, volume_required, near_high_pct, min_price, min_avg_volume, trend_filter, near_pivot_pct, breakout_already_occurred, quality)
+            r = analyze_vcp(symbol, frame, min_contractions, max_contractions, first_max, final_max, final_min_tightness, volume_required, near_high_pct, min_price, min_avg_volume, trend_filter, near_pivot_pct, breakout_already_occurred, quality, final_contraction_max_age)
             if r:
                 rows.append(r)
         except Exception:
@@ -110,7 +116,7 @@ def run_scan(min_contractions=2, max_contractions=4, first_max=25., final_max=5.
         df["Industry"] = [meta.get(s, ("Not Available", "Not Available"))[1] for s in df.Symbol.astype(str)]
         df["Index"] = [" • ".join(v for v in inds.get(s, ("Not Available",) * 5) if v != "Not Available") or "Not Available" for s in df.Symbol.astype(str)]
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df.Symbol.astype(str)
-    cols = ["Symbol", "Index", "Industry", "LTP", "VCP Score", "Quality", "VCP Stage", "Contractions", "C1 %", "C2 %", "C3 %", "C4 %", "Final Contraction %", "Pivot", "From Pivot %", "52W High", "From 52W High %", "Avg Volume 50D", "Volume Contracting", "Trend OK", "Breakout", "Breakout Status", "Breakout Contractions", "History Days", "TradingView"]
+    cols = ["Symbol", "Index", "Industry", "LTP", "VCP Score", "Quality", "VCP Stage", "Contractions", "C1 %", "C2 %", "C3 %", "C4 %", "Final Contraction %", "Final Contraction Age", "Pivot", "From Pivot %", "52W High", "From 52W High %", "Avg Volume 50D", "Volume Contracting", "Trend OK", "Breakout", "Breakout Status", "Breakout Contractions", "History Days", "TradingView"]
     df = df[[c for c in cols if c in df.columns]]
     stats = {"universe": len(symbols), "downloaded": snap["downloaded"], "coverage": snap["usable_coverage"], "usable": snap["usable"], "missing_count": snap["missing_count"], "short_history_count": snap["short_history_count"], "stale_data_count": snap["stale_data_count"], "data_date": snap["data_date"], "snapshot_mode": snap["mode"], "snapshot_day": snap["snapshot_day"], "downloaded_at": snap["downloaded_at"], "total_candidates": len(rows), "matches": len(df)}
     return df, stats
