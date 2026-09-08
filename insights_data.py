@@ -2,6 +2,7 @@ import re
 from io import StringIO
 from urllib.parse import quote
 
+import cloudscraper
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -11,8 +12,18 @@ SCREENER_BASE = "https://www.screener.in"
 NSE_BASE = "https://www.nseindia.com"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9",
+}
+
+NSE_HEADERS = {
+    **HEADERS,
+    "Accept": "application/json, text/plain, */*",
+    "Referer": f"{NSE_BASE}/",
+    "X-Requested-With": "XMLHttpRequest",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
 }
 
 
@@ -221,6 +232,7 @@ def fetch_screener(symbol):
         "peers": peers,
         "source": f"{SCREENER_BASE}/company/{symbol}/consolidated/",
         "company_id": company_id,
+        "nse_available": False,
     }
 
 
@@ -230,37 +242,77 @@ def search_screener(query):
     return payload if isinstance(payload, list) else []
 
 
-def _nse_session():
-    session = requests.Session()
-    session.headers.update(HEADERS)
-    session.get(NSE_BASE, timeout=20)
+def _nse_session(symbol=None):
+    session = cloudscraper.create_scraper(browser="chrome")
+    session.headers.update(NSE_HEADERS)
+    quote_page = f"{NSE_BASE}/get-quotes/equity?symbol={quote(symbol) if symbol else ''}"
+    session.get(quote_page, timeout=20)
     return session
 
 
-def fetch_nse(symbol):
-    session = _nse_session()
-    quote = _request(f"{NSE_BASE}/api/quote-equity", session=session, params={"symbol": symbol}).json()
-    trade = _request(f"{NSE_BASE}/api/quote-equity", session=session, params={"symbol": symbol, "section": "trade_info"}).json()
-    industry_info = quote.get("industryInfo") or {}
-    price_info = quote.get("priceInfo") or {}
-    week = price_info.get("weekHighLow") or {}
-    trade_info = ((trade.get("marketDeptOrderBook") or {}).get("tradeInfo") or {})
+def _screener_quote_fallback(symbol):
+    html, _ = _screener_company_html(symbol)
+    soup = BeautifulSoup(html, "html.parser")
+    current = _clean_number(_find_ratio(soup, "Current Price"))
+    high_low = _find_ratio(soup, "High / Low") or ""
+    match = re.search(r"([\d,.]+)\s*/\s*([\d,.]+)", high_low)
+    high = _clean_number(match.group(1)) if match else None
+    low = _clean_number(match.group(2)) if match else None
+    sector, industry = _classification(soup)
     return {
-        "ltp": price_info.get("lastPrice"),
-        "change_pct": price_info.get("pChange"),
-        "market_cap": trade_info.get("totalMarketCap"),
-        "sector": industry_info.get("sector") or industry_info.get("macro"),
-        "industry": industry_info.get("industry"),
-        "basic_industry": industry_info.get("basicIndustry"),
-        "indices": (quote.get("metadata") or {}).get("pdSectorIndAll") or [],
-        "52w_high": week.get("max"),
-        "52w_low": week.get("min"),
-        "isin": (quote.get("info") or {}).get("isin"),
+        "ltp": current,
+        "change_pct": None,
+        "market_cap": _clean_number(_find_ratio(soup, "Market Cap")),
+        "sector": sector,
+        "industry": industry,
+        "basic_industry": None,
+        "indices": [],
+        "52w_high": high,
+        "52w_low": low,
+        "isin": None,
+        "nse_available": False,
+        "source": "Screener fallback (NSE feed blocked)",
     }
 
 
+def fetch_nse(symbol):
+    try:
+        session = _nse_session(symbol)
+        quote_response = _request(
+            f"{NSE_BASE}/api/quote-equity",
+            session=session,
+            params={"symbol": symbol},
+        )
+        quote = quote_response.json()
+        trade = _request(
+            f"{NSE_BASE}/api/quote-equity",
+            session=session,
+            params={"symbol": symbol, "section": "trade_info"},
+        ).json()
+        industry_info = quote.get("industryInfo") or {}
+        price_info = quote.get("priceInfo") or {}
+        week = price_info.get("weekHighLow") or {}
+        trade_info = ((trade.get("marketDeptOrderBook") or {}).get("tradeInfo") or {})
+        return {
+            "ltp": price_info.get("lastPrice"),
+            "change_pct": price_info.get("pChange"),
+            "market_cap": trade_info.get("totalMarketCap"),
+            "sector": industry_info.get("sector") or industry_info.get("macro"),
+            "industry": industry_info.get("industry"),
+            "basic_industry": industry_info.get("basicIndustry"),
+            "indices": (quote.get("metadata") or {}).get("pdSectorIndAll") or [],
+            "52w_high": week.get("max"),
+            "52w_low": week.get("min"),
+            "isin": (quote.get("info") or {}).get("isin"),
+            "nse_available": True,
+            "source": "NSE India",
+        }
+    except Exception:
+        return _screener_quote_fallback(symbol)
+
+
 def _large_deals(symbol, mode):
-    session = _nse_session()
+    session = _nse_session(symbol)
     payload = _request(
         f"{NSE_BASE}/api/snapshot-capital-market-largedeal",
         session=session,
@@ -273,4 +325,16 @@ def _large_deals(symbol, mode):
 
 
 def fetch_nse_deals(symbol):
-    return {"bulk": _large_deals(symbol, "bulk_deals"), "block": _large_deals(symbol, "block_deals")}
+    try:
+        return {
+            "bulk": _large_deals(symbol, "bulk_deals"),
+            "block": _large_deals(symbol, "block_deals"),
+            "nse_available": True,
+        }
+    except Exception:
+        return {
+            "bulk": pd.DataFrame(),
+            "block": pd.DataFrame(),
+            "nse_available": False,
+            "source": "NSE large-deal feed unavailable from this app server",
+        }
