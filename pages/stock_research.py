@@ -51,7 +51,7 @@ if history.empty:
     st.warning(f"Price history is unavailable for {symbol}.")
     st.stop()
 
-# Lightweight Charts expects seconds since Unix epoch for daily time values.
+# The research chart is intentionally daily (1D) OHLC data.
 chart_rows = []
 for timestamp, row in history.iterrows():
     chart_rows.append(
@@ -91,13 +91,14 @@ button:hover,button.active{{background:#252d38;color:#f3f5f7;border-color:#3b465
 <body>
 <div id="shell">
   <div id="toolbar">
+    <button id="daily" class="active" title="Daily bars">1D</button>
     <button data-range="3m">3M</button>
     <button data-range="6m">6M</button>
     <button data-range="1y">1Y</button>
     <button data-range="2y">2Y</button>
-    <button data-range="all">ALL</button>
+    <button data-range="all">MAX</button>
     <button id="fit">FIT</button>
-    <span id="status"></span>
+    <span id="status">Daily</span>
   </div>
   <div id="chart"></div>
 </div>
@@ -182,7 +183,7 @@ dma200.setData(rows.filter(r => r.dma200 !== null).map(r => ({{ time:r.time, val
 volumeSeries.setData(rows.map(r => ({{ time:r.time, value:r.volume, color:r.close >= r.open ? 'rgba(53,208,127,.42)' : 'rgba(255,102,115,.42)' }})));
 
 chart.subscribeCrosshairMove(param => {{
-  if (!param.time || !param.seriesData) {{ status.textContent = ''; return; }}
+  if (!param.time || !param.seriesData) {{ status.textContent = 'Daily'; return; }}
   const bar = param.seriesData.get(barSeries);
   if (bar) {{
     const date = new Date(Number(bar.time) * 1000).toLocaleDateString(undefined, {{ day:'2-digit', month:'short', year:'numeric' }});
@@ -218,4 +219,4 @@ setRange('1y');
 
 components.html(chart_html, height=700, scrolling=False)
 
-st.caption("TradingView Lightweight Charts · OHLC bars · 20 / 50 / 150 / 200 DMA · volume · pinch zoom · drag/pan · crosshair.")
+st.caption("1D OHLC bar chart · 20 / 50 / 150 / 200 DMA · volume · pinch zoom · drag/pan · crosshair.")
