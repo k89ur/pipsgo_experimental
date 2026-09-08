@@ -7,3 +7,4 @@ cloudscraper>=1.2.71
 tvdatafeed-enhanced==2.2.1
 websocket-client>=1.8.0
 streamlit-cookies-controller==0.0.4
+plotly>=5.24
