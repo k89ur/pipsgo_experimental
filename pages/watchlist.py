@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+import yfinance as yf
 
 from watchlist_store import get_watchlist_records, remove_stock
 
@@ -31,21 +32,32 @@ if scan_frames:
 else:
     market = pd.DataFrame().set_index(pd.Index([], name="Symbol"))
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_classification(symbol):
+    try:
+        info = yf.Ticker(f"{symbol}.NS").info
+        return info.get("sector") or "—", info.get("industry") or "—"
+    except Exception:
+        return "—", "—"
+
 rows = []
 for record in records:
     symbol = record["symbol"]
     row = market.loc[symbol].to_dict() if symbol in market.index else {}
+    sector = row.get("Sector") or row.get("sector")
+    industry = row.get("Industry") or row.get("industry")
+    if not sector or not industry:
+        fetched_sector, fetched_industry = fetch_classification(symbol)
+        sector = sector or fetched_sector
+        industry = industry or fetched_industry
     rows.append(
         {
             "Watch": True,
             "Symbol": symbol,
             "LTP": row.get("LTP"),
             "RS": row.get("RS Rating"),
-            "3M": row.get("3M %"),
-            "6M": row.get("6M %"),
-            "12M": row.get("12M %"),
-            "52W High": row.get("52W High"),
-            "52WH < %": row.get("From 52W High %"),
+            "Sector": sector or "—",
+            "Industry": industry or "—",
         }
     )
 
@@ -56,11 +68,8 @@ column_config = {
     "Symbol": st.column_config.TextColumn("SYMBOL", width="small", pinned=True),
     "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f", width="small"),
     "RS": st.column_config.NumberColumn("RS", format="%d", width="small"),
-    "3M": st.column_config.NumberColumn("3M", format="%.1f%%", width="small"),
-    "6M": st.column_config.NumberColumn("6M", format="%.1f%%", width="small"),
-    "12M": st.column_config.NumberColumn("12M", format="%.1f%%", width="small"),
-    "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f", width="small"),
-    "52WH < %": st.column_config.NumberColumn("52WH < %", format="%.1f%%", width="small"),
+    "Sector": st.column_config.TextColumn("SECTOR", width="medium"),
+    "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"),
 }
 
 disabled = [column for column in monitor.columns if column != "Watch"]
@@ -79,4 +88,4 @@ for symbol, after in zip(symbols, edited["Watch"].tolist()):
     if not bool(after):
         remove_stock(symbol)
 
-st.caption("Latest Stock RS values available in this session. Each stock remains in the browser Watchlist for 15 days from the time it was added.")
+st.caption("LTP and RS use the latest Stock RS data available in this session. Sector and Industry are read from Yahoo Finance when scan data does not include them.")
