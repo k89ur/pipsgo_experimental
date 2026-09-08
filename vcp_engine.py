@@ -57,8 +57,6 @@ def analyze_vcp(symbol, frame, min_contractions=2, max_contractions=4, first_max
         bo = breakout_info(close, pivot, seq)
         breakout, breakout_status = bo["breakout"], bo["status"]
         finaltight = final_min_tightness <= final <= final_max
-        # Require the latest/qualifying contraction to have started recently.
-        # The age is measured in trading bars from its starting swing high to the latest bar.
         final_age = max(0, len(x) - 1 - int(seq[-1]["high_i"]))
         recent_final = final_age <= int(final_contraction_max_age)
         stage = {2: "Early", 3: "Developing", 4: "Mature"}.get(len(seq), "VCP")
@@ -120,3 +118,5 @@ def run_scan(min_contractions=2, max_contractions=4, first_max=25., final_max=5.
     df = df[[c for c in cols if c in df.columns]]
     stats = {"universe": len(symbols), "downloaded": snap["downloaded"], "coverage": snap["usable_coverage"], "usable": snap["usable"], "missing_count": snap["missing_count"], "short_history_count": snap["short_history_count"], "stale_data_count": snap["stale_data_count"], "data_date": snap["data_date"], "snapshot_mode": snap["mode"], "snapshot_day": snap["snapshot_day"], "downloaded_at": snap["downloaded_at"], "total_candidates": len(rows), "matches": len(df)}
     return df, stats
+
+# Final-contraction age filter remains part of the VCP engine API; this marker also forces the app deployment to refresh the module.
