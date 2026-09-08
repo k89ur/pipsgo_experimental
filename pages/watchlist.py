@@ -7,7 +7,8 @@ import cloudscraper
 import pandas as pd
 import streamlit as st
 
-from insights_data import fetch_nse, fetch_nse_deals, fetch_screener, search_screener
+from insights_data import fetch_nse, fetch_screener, search_screener
+from insights_deals import fetch_nse_historical_deals
 
 NSE_BASE = "https://www.nseindia.com"
 
@@ -66,9 +67,9 @@ def cached_nse(stock):
     return fetch_nse(stock)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def cached_deals(stock):
-    return fetch_nse_deals(stock)
+    return fetch_nse_historical_deals(stock, days=365)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -134,6 +135,17 @@ def _moneycontrol_pe_history(moneycontrol):
         if rows:
             return pd.DataFrame(rows).sort_values("Date").tail(6).reset_index(drop=True)
     return pd.DataFrame()
+
+
+def _deal_columns(frame, short=False):
+    if frame.empty:
+        return frame
+    if short:
+        preferred = ["date", "symbol", "securityName", "qty"]
+    else:
+        preferred = ["date", "symbol", "securityName", "clientName", "buySell", "qty", "watp", "remarks"]
+    columns = [column for column in preferred if column in frame.columns]
+    return _unique_columns(frame[columns] if columns else frame)
 
 
 try:
@@ -250,22 +262,38 @@ else:
     st.caption("NSE corporate-action history could not be loaded from this app server right now.")
     st.link_button("Open NSE corporate actions ↗", f"{NSE_BASE}/companies-listing/corporate-filings-actions?symbol={quote(symbol)}&tabIndex=equity")
 
-# Large deals are shown only when actual history is available; empty feeds are not presented as fake data.
-bulk_df = deals.get("bulk", pd.DataFrame())
-block_df = deals.get("block", pd.DataFrame())
-if isinstance(bulk_df, pd.DataFrame) and not bulk_df.empty or isinstance(block_df, pd.DataFrame) and not block_df.empty:
-    st.markdown('<div class="section-title">Institutional / large deals · NSE</div>', unsafe_allow_html=True)
-    bulk, block = st.columns(2, gap="large")
-    with bulk:
+# -----------------------------------------------------------------------------
+# NSE institutional activity
+# -----------------------------------------------------------------------------
+
+deal_data = deals or {}
+bulk_df = deal_data.get("bulk", pd.DataFrame())
+block_df = deal_data.get("block", pd.DataFrame())
+short_df = deal_data.get("short_selling", pd.DataFrame())
+
+st.markdown('<div class="section-title">NSE institutional activity · last 1 year</div>', unsafe_allow_html=True)
+st.caption(f"Historical window: {deal_data.get('from_date', '—')} to {deal_data.get('to_date', '—')}. Data is queried from NSE historical Bulk Deals, Block Deals and Short Selling reports.")
+
+if not any(isinstance(frame, pd.DataFrame) and not frame.empty for frame in (bulk_df, block_df, short_df)):
+    st.caption("No matching NSE historical activity was returned for this symbol in the selected one-year window.")
+    st.link_button("Open NSE Bulk / Block / Short Selling archive ↗", f"{NSE_BASE}/report-detail/display-bulk-and-block-deals#")
+else:
+    tabs = st.tabs(["Bulk deals", "Block deals", "Short selling"])
+    with tabs[0]:
         if isinstance(bulk_df, pd.DataFrame) and not bulk_df.empty:
-            cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in bulk_df.columns]
-            st.markdown("**Bulk deals**")
-            st.dataframe(_unique_columns(bulk_df[cols]), use_container_width=True, hide_index=True, height=min(300, 70 + len(bulk_df) * 36))
-    with block:
+            st.dataframe(_deal_columns(bulk_df), use_container_width=True, hide_index=True, height=min(420, 90 + len(bulk_df) * 36))
+        else:
+            st.caption("No bulk-deal records for this symbol in the last 1 year.")
+    with tabs[1]:
         if isinstance(block_df, pd.DataFrame) and not block_df.empty:
-            cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in block_df.columns]
-            st.markdown("**Block deals**")
-            st.dataframe(_unique_columns(block_df[cols]), use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
+            st.dataframe(_deal_columns(block_df), use_container_width=True, hide_index=True, height=min(420, 90 + len(block_df) * 36))
+        else:
+            st.caption("No block-deal records for this symbol in the last 1 year.")
+    with tabs[2]:
+        if isinstance(short_df, pd.DataFrame) and not short_df.empty:
+            st.dataframe(_deal_columns(short_df, short=True), use_container_width=True, hide_index=True, height=min(420, 90 + len(short_df) * 36))
+        else:
+            st.caption("No short-selling records for this symbol in the last 1 year.")
 
 # -----------------------------------------------------------------------------
 # Shareholders
@@ -316,4 +344,4 @@ if website:
 else:
     st.caption("Company website was not available in the Screener listing.")
 
-st.caption("Sources: NSE India for quote, classification and corporate actions; Screener.in for valuation, financial trends, shareholding, peers and website; Moneycontrol only as the historical P/E fallback. No scanner calculations are changed.")
+st.caption("Sources: NSE India for quote, classification, corporate actions and historical deal activity; Screener.in for valuation, financial trends, shareholding, peers and website; Moneycontrol only as the historical P/E fallback. No scanner calculations are changed.")
