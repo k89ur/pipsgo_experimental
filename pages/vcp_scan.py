@@ -16,40 +16,30 @@ if "vcp_columns" not in st.session_state:
     st.session_state.vcp_columns = None
 
 COLUMNS = [
-    "Symbol", "Index", "Industry", "LTP", "VCP Score", "VCP Stage", "Contractions",
-    "C1 %", "C2 %", "C3 %", "C4 %", "Final Contraction %", "Final Contraction Age",
-    "Pivot", "From Pivot %", "52W High", "From 52W High %", "Avg Volume 50D",
-    "Volume Contracting", "Trend OK", "Breakout", "Breakout Status", "Breakout Contractions",
-    "TradingView",
+    "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
+    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
+    "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK", "TradingView",
 ]
 
 
 def column_config():
     return {
-        "S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"),
         "Symbol": st.column_config.TextColumn("SYMBOL"),
         "Index": st.column_config.TextColumn("INDEX"),
         "Industry": st.column_config.TextColumn("INDUSTRY"),
         "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"),
-        "VCP Score": st.column_config.NumberColumn("SCORE", format="%d"),
-        "VCP Stage": st.column_config.TextColumn("STAGE"),
-        "Contractions": st.column_config.NumberColumn("C", format="%d"),
-        "C1 %": st.column_config.NumberColumn("C1", format="%.1f%%"),
-        "C2 %": st.column_config.NumberColumn("C2", format="%.1f%%"),
-        "C3 %": st.column_config.NumberColumn("C3", format="%.1f%%"),
-        "C4 %": st.column_config.NumberColumn("C4", format="%.1f%%"),
-        "Final Contraction %": st.column_config.NumberColumn("FINAL", format="%.1f%%"),
-        "Final Contraction Age": st.column_config.NumberColumn("FINAL AGE", format="%d"),
-        "Pivot": st.column_config.NumberColumn("PIVOT", format="₹%.2f"),
-        "From Pivot %": st.column_config.NumberColumn("PIVOT < %", format="%.1f%%"),
-        "52W High": st.column_config.NumberColumn("52WH", format="₹%.2f"),
-        "From 52W High %": st.column_config.NumberColumn("52WH", format="%.1f%%"),
-        "Avg Volume 50D": st.column_config.NumberColumn("AVG VOL", format="%.0f"),
-        "Volume Contracting": st.column_config.CheckboxColumn("VOL ↓"),
+        "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"),
+        "From 52W High %": st.column_config.NumberColumn("FROM 52W HIGH", format="%.1f%%"),
+        "52W Low": st.column_config.NumberColumn("52W LOW", format="₹%.2f"),
+        "From 52W Low %": st.column_config.NumberColumn("FROM 52W LOW", format="%.1f%%"),
+        "50DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"),
+        "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
+        "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
+        "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
+        "50DMA Rising": st.column_config.CheckboxColumn("50 DMA ↑"),
+        "150DMA Rising": st.column_config.CheckboxColumn("150 DMA ↑"),
+        "200DMA Rising": st.column_config.CheckboxColumn("200 DMA ↑"),
         "Trend OK": st.column_config.CheckboxColumn("TREND"),
-        "Breakout": st.column_config.CheckboxColumn("BREAKOUT"),
-        "Breakout Status": st.column_config.TextColumn("BREAKOUT STATUS"),
-        "Breakout Contractions": st.column_config.NumberColumn("BO C", format="%d"),
         "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
     }
 
@@ -57,17 +47,6 @@ def column_config():
 def visible_vcp_columns():
     saved = st.session_state.get("vcp_columns")
     return saved if saved else COLUMNS.copy()
-
-
-def render_table(data, height, visible_columns=None):
-    table = data[[c for c in (visible_columns or COLUMNS) if c in data.columns]].copy()
-    st.dataframe(
-        table,
-        use_container_width=True,
-        hide_index=True,
-        height=height,
-        column_config=column_config(),
-    )
 
 
 @st.dialog("Reset Market Data")
@@ -82,7 +61,6 @@ def reset_market_data_dialog():
             st.session_state.vcp_stats = None
             st.session_state.vcp_full_table = False
             st.session_state.vcp_columns = None
-            st.session_state["vcp_reset_message"] = "Market data cleared."
             st.rerun()
     with c2:
         if st.button("Cancel", use_container_width=True, key="cancel_vcp_reset"):
@@ -103,7 +81,7 @@ def vcp_column_selector(all_columns, saved_columns):
 
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-head"><div class="page-title">VCP Scan</div><div class="page-sub">Volatility Contraction Pattern · swing-high / swing-low contraction analysis with volume confirmation</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="page-head"><div class="page-title">VCP Scan</div><div class="page-sub">Trend · 52W position · 50DMA position</div></div>', unsafe_allow_html=True)
 
 if st.session_state.vcp_full_table:
     df = st.session_state.vcp_result
@@ -112,18 +90,12 @@ if st.session_state.vcp_full_table:
     else:
         full = df[[c for c in visible_vcp_columns() if c in df.columns]].copy()
         full.insert(0, "S.No", range(1, len(full) + 1))
-        top, close = st.columns([20, 1], gap="small")
+        _, close = st.columns([20, 1], gap="small")
         with close:
             if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="vcp_minimize", help="Return to scanner"):
                 st.session_state.vcp_full_table = False
                 st.rerun()
-        st.dataframe(
-            full,
-            use_container_width=True,
-            hide_index=True,
-            height=min(900, 95 + max(len(full), 1) * 36),
-            column_config=column_config(),
-        )
+        st.dataframe(full, use_container_width=True, hide_index=True, height=min(900, 95 + max(len(full), 1) * 36), column_config=column_config())
     st.stop()
 
 main, side = st.columns([4.7, 1.35], gap="large")
@@ -136,36 +108,23 @@ with side:
 with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">VCP settings</div>', unsafe_allow_html=True)
-        a, b, c, d = st.columns(4, gap="small")
+        a, b = st.columns(2, gap="small")
         with a:
-            min_c = st.slider("Minimum contractions", 2, 4, 2, key="vcp_min_c")
-            max_c = st.slider("Maximum contractions", min_c, 4, 4, key="vcp_max_c")
-        with b:
-            first_max = st.slider("Maximum first contraction %", 5.0, 40.0, 25.0, step=1.0, key="vcp_first_max")
-            final_max = st.slider("Maximum final contraction %", 1.0, 10.0, 5.0, step=.5, key="vcp_final_max")
-        with c:
-            final_min = st.slider("Final contraction minimum %", 0.0, 5.0, 0.0, step=.5, key="vcp_final_min")
-            quality = st.selectbox("VCP quality", ["Strict", "Standard", "Loose"], index=1, key="vcp_quality")
-        with d:
-            volume_required = st.checkbox("Volume contraction required", True, key="vcp_volume")
             trend_filter = st.checkbox("Trend filter", True, key="vcp_trend")
-            breakout = st.checkbox("Breakout already occurred", False, key="vcp_breakout")
+            st.caption("Price ≥ 50 / 150 / 200 DMA + all three MAs rising over the last 20 trading days.")
+        with b:
+            dma_position_filter = st.checkbox("50DMA position", True, key="vcp_dma_position")
+            dma_position_pct = st.slider("Within 50DMA ± %", 0.0, 30.0, 15.0, step=1.0, key="vcp_dma_pct")
+
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
-        e, f, g, h = st.columns(4, gap="small")
-        with e:
-            near_high = st.slider("Within 52W high %", 1.0, 15.0, 7.0, step=.5, key="vcp_near_high")
-        with f:
-            min_price = st.number_input("Minimum price ₹", min_value=1.0, value=100.0, step=10.0, key="vcp_min_price")
-        with g:
-            min_avg_volume = st.number_input("Minimum average volume", min_value=0.0, value=0.0, step=10000.0, key="vcp_min_avg_volume")
-        with h:
-            near_pivot = st.slider("Near pivot %", 1.0, 15.0, 5.0, step=.5, key="vcp_near_pivot")
-        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
-        k, l = st.columns(2, gap="small")
-        with k:
-            final_age_max = st.slider("Final contraction started within (trading days)", 5, 60, 20, step=1, key="vcp_final_age")
-        with l:
-            st.caption("Active VCP filter: the latest qualifying contraction must have started within this many trading bars.")
+        c, d = st.columns(2, gap="small")
+        with c:
+            use_52w_high = st.checkbox("52W High filter", True, key="vcp_52w_high_enabled")
+            near_high = st.slider("Within 52W High %", 0.0, 10.0, 5.0, step=0.5, key="vcp_near_high")
+        with d:
+            use_52w_low = st.checkbox("52W Low filter", False, key="vcp_52w_low_enabled")
+            prior_low_pct = st.slider("Minimum advance from 52W Low %", 30.0, 300.0, 70.0, step=5.0, key="vcp_52w_low_pct")
+
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         i, j, reset = st.columns([1.45, 1.45, 1.55], gap="small")
         with i:
@@ -194,20 +153,13 @@ if live or eod:
 
         with st.spinner("Running VCP scan…"):
             result, stats = vcp_engine.run_scan(
-                min_contractions=min_c,
-                max_contractions=max_c,
-                first_max=first_max,
-                final_max=final_max,
-                final_min_tightness=final_min,
-                volume_required=volume_required,
-                near_high_pct=near_high,
-                min_price=min_price,
-                min_avg_volume=min_avg_volume,
                 trend_filter=trend_filter,
-                near_pivot_pct=near_pivot,
-                breakout_already_occurred=breakout,
-                quality=quality,
-                final_contraction_max_age=final_age_max,
+                use_52w_high=use_52w_high,
+                near_high_pct=near_high,
+                use_52w_low=use_52w_low,
+                prior_low_pct=prior_low_pct,
+                dma_position_filter=dma_position_filter,
+                dma_position_pct=dma_position_pct,
                 batch_size=vcp_engine.DEFAULT_BATCH_SIZE,
                 snapshot_mode=mode,
                 progress_callback=update,
@@ -251,12 +203,6 @@ with main:
                     st.session_state.vcp_full_table = True
                     st.rerun()
             view = df[[c for c in selected_columns if c in df.columns]].copy()
-            st.dataframe(
-                view.head(50),
-                use_container_width=True,
-                hide_index=True,
-                height=min(650, 95 + min(len(view), 15) * 36),
-                column_config=column_config(),
-            )
+            st.dataframe(view.head(50), use_container_width=True, hide_index=True, height=min(650, 95 + min(len(view), 15) * 36), column_config=column_config())
             if len(df) > 50:
                 st.caption(f"Showing top 50 of {len(df):,} matches. Use Full screen view for the complete table.")
