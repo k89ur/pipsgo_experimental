@@ -5,9 +5,21 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-afrom = None
 from stock_research import load_price_history, load_research
 from watchlist_store import get_watchlist
+
+
+def _fmt(value):
+    if value is None:
+        return "—"
+    try:
+        value = float(value)
+        if not math.isfinite(value):
+            return "—"
+        return f"{value:+.1f}%"
+    except Exception:
+        return "—"
+
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 
@@ -31,9 +43,11 @@ st.query_params["symbol"] = symbol
 def cached_research(stock):
     return load_research(stock)
 
+
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_history(stock):
     return load_price_history(stock)
+
 
 try:
     with st.spinner("Loading stock research…"):
@@ -160,15 +174,3 @@ st.dataframe(
 )
 
 st.caption("Growth and earnings fields are derived from Yahoo Finance data. Industry strength, catalyst quality, and pre-base melt-up risk are deliberately not presented as automated facts until a dedicated scoring source is added.")
-
-
-def _fmt(value):
-    if value is None:
-        return "—"
-    try:
-        value = float(value)
-        if not math.isfinite(value):
-            return "—"
-        return f"{value:+.1f}%"
-    except Exception:
-        return "—"
