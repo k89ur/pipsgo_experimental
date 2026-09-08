@@ -27,6 +27,7 @@ st.markdown("""
 
 index_page = st.Page("pages/index_rs.py", title="Index RS", icon=":material/leaderboard:", url_path="index-rs", default=True)
 stock_page = st.Page("pages/stock_rs.py", title="Stock RS + Technical", icon=":material/query_stats:", url_path="stock-rs")
+vcp_page = st.Page("pages/vcp_scan.py", title="VCP Scan", icon=":material/ssid_chart:", url_path="vcp-scan")
 insights_page = st.Page("pages/watchlist.py", title="Insights", icon=":material/analytics:", url_path="insights")
 
 with st.sidebar:
@@ -38,5 +39,5 @@ with st.sidebar:
     st.divider()
     st.markdown('<div class="help">PipsGoX market scanners</div>', unsafe_allow_html=True)
 
-pg = st.navigation([index_page, stock_page, insights_page], position="sidebar")
+pg = st.navigation([index_page, stock_page, vcp_page, insights_page], position="sidebar")
 pg.run()
