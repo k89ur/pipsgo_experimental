@@ -118,6 +118,10 @@ def _growth_chart(table):
     period_cols = [c for c in table.columns if re.match(r"^(Jun|Sep|Dec|Mar) \d{4}$", str(c))]
     if not period_cols:
         return pd.DataFrame()
+    # Screener may return quarter columns grouped by month. Sort them by date
+    # before calculating YoY so each quarter is compared with the same quarter
+    # four periods earlier and the chart runs chronologically left-to-right.
+    period_cols = sorted(period_cols, key=lambda value: pd.to_datetime(value, format="%b %Y"))
 
     sales_row = _value_row(table, ["Sales", "Revenue"])
     profit_row = _value_row(table, ["Net Profit", "Profit After Tax"])
