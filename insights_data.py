@@ -90,16 +90,16 @@ def _normalise_table(frame):
     table.columns = [str(c).strip() for c in table.columns]
     first = table.columns[0]
     table = table.rename(columns={first: "Metric"})
-    table["Metric"] = table["Metric"].astype(str).str.strip()
+    table["Metric"] = table["Metric"].astype(str).str.strip().str.replace(r"\s*\+$", "", regex=True)
     return table
 
 
 def _value_row(table, names):
     if table.empty or "Metric" not in table.columns:
         return None
-    wanted = {name.lower() for name in names}
+    wanted = {re.sub(r"\s*\+$", "", name.lower().strip()) for name in names}
     for _, row in table.iterrows():
-        metric = str(row["Metric"]).strip().lower()
+        metric = re.sub(r"\s*\+$", "", str(row["Metric"]).strip().lower())
         if metric in wanted:
             return row
     return None
@@ -148,6 +148,48 @@ def _growth_chart(table):
         margin_value = margin[i] if i < len(margin) else None
         rows.append({"Quarter": period, "Sales Growth": sales_growth, "Earning Growth": profit_growth, "Margin": margin_value})
     return pd.DataFrame(rows)
+
+
+def _screener_chart(session, company_id, metrics="PE-EPS", days=1825):
+    if not company_id:
+        return {}
+    try:
+        response = session.get(
+            f"{SCREENER_BASE}/api/company/{company_id}/chart/",
+            params={"q": metrics, "days": days},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _pe_history(session, company_id):
+    payload = _screener_chart(session, company_id, metrics="PE-EPS", days=1825)
+    datasets = payload.get("datasets") or []
+    pe_dataset = next((item for item in datasets if str(item.get("metric", "")).upper() == "PE"), None)
+    if not pe_dataset:
+        return pd.DataFrame()
+    rows = []
+    for value in pe_dataset.get("values") or []:
+        if len(value) < 2:
+            continue
+        date_text = str(value[0]).strip()
+        pe_value = _clean_number(value[1])
+        if not date_text or pe_value is None or pe_value <= 0:
+            continue
+        try:
+            date = pd.to_datetime(date_text)
+        except Exception:
+            continue
+        rows.append({"Date": date, "P/E": pe_value})
+    if not rows:
+        return pd.DataFrame()
+    history = pd.DataFrame(rows).drop_duplicates(subset=["Date"]).sort_values("Date")
+    history["P/E"] = pd.to_numeric(history["P/E"], errors="coerce")
+    return history.dropna(subset=["P/E"])
 
 
 def _website(soup):
@@ -213,6 +255,7 @@ def fetch_screener(symbol):
 
     quarterly = _normalise_table(_section_table(soup, "quarters"))
     growth = _growth_chart(quarterly)
+    pe_history = _pe_history(session, company_id)
     shareholders = _normalise_table(_section_table(soup, "shareholding"))
     peers = _parse_peers(session, warehouse_id)
     sector, industry = _classification(soup)
@@ -230,6 +273,7 @@ def fetch_screener(symbol):
         "industry": industry,
         "market_share": _market_share(soup),
         "growth": growth,
+        "pe_history": pe_history,
         "shareholders": shareholders,
         "peers": peers,
         "source": f"{SCREENER_BASE}/company/{symbol}/consolidated/",
@@ -318,7 +362,6 @@ def _normalise_deal_table(frame):
         return frame
     table = frame.copy()
     table.columns = [str(c).strip() for c in table.columns]
-    # NSE archive CSVs have used slightly different casing over time.
     rename = {}
     for column in table.columns:
         key = re.sub(r"[^a-z0-9]", "", column.lower())
@@ -357,8 +400,6 @@ def _archive_deals(symbol, mode):
 
 
 def _large_deals(symbol, mode):
-    # The public NSE archive CSVs are served from nsearchives.nseindia.com and
-    # avoid the Cloudflare/WAF restrictions affecting NSE's /api endpoints.
     return _archive_deals(symbol, mode)
 
 
@@ -373,8 +414,6 @@ def fetch_nse_deals(symbol):
             "source": "NSE official archive CSV",
         }
     except Exception:
-        # Keep the API as a secondary fallback if the archive host is
-        # temporarily unavailable.
         try:
             return {
                 "bulk": _api_large_deals(symbol, "bulk_deals"),
