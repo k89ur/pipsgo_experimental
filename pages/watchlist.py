@@ -52,6 +52,7 @@ if not symbol:
 
 st.query_params["symbol"] = symbol
 
+
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_screener(stock):
     return fetch_screener(stock)
@@ -79,6 +80,9 @@ except Exception as exc:
 company_name = screener.get("company_name") or symbol
 sector = nse.get("sector") or screener.get("sector") or "—"
 industry = nse.get("industry") or screener.get("industry") or "—"
+
+if not nse.get("nse_available", False):
+    st.caption("NSE quote API is blocking the app server. Core quote fields are temporarily using the Screener fallback; the scanner is unaffected.")
 
 st.markdown(
     f'<div class="page-head"><div class="page-title">{company_name}</div>'
@@ -114,7 +118,7 @@ if isinstance(growth, pd.DataFrame) and not growth.empty:
     chart = growth.set_index("Quarter")[["Sales Growth", "Earning Growth", "Margin"]].copy()
     chart.columns = ["Sales Growth %", "Earning Growth %", "Margin %"]
     st.line_chart(chart, use_container_width=True, height=330)
-    st.caption("Sales Growth and Earning Growth are quarter-on-quarter-year (YoY) growth rates. Margin is OPM when available from Screener; otherwise it is derived from net profit / sales.")
+    st.caption("Sales Growth and Earning Growth are YoY growth rates. Margin is OPM when available from Screener; otherwise it is derived from net profit / sales.")
 else:
     st.info("Quarterly growth history is not available from Screener for this company.")
 
@@ -123,12 +127,15 @@ else:
 # -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Institutional / large deals · NSE</div>', unsafe_allow_html=True)
+if not deals.get("nse_available", False):
+    st.caption("NSE large-deal feed is currently blocked from this app server. No deal is shown rather than using an unverified source.")
+
 bulk, block = st.columns(2, gap="large")
 with bulk:
     st.markdown("**Bulk deals**")
     bulk_df = deals.get("bulk", pd.DataFrame())
     if bulk_df.empty:
-        st.caption("No latest NSE bulk deal reported for this symbol.")
+        st.caption("No NSE bulk deal data available for this symbol right now.")
     else:
         cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in bulk_df.columns]
         st.dataframe(bulk_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(bulk_df) * 36))
@@ -136,7 +143,7 @@ with block:
     st.markdown("**Block deals**")
     block_df = deals.get("block", pd.DataFrame())
     if block_df.empty:
-        st.caption("No latest NSE block deal reported for this symbol.")
+        st.caption("No NSE block deal data available for this symbol right now.")
     else:
         cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in block_df.columns]
         st.dataframe(block_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
@@ -193,4 +200,4 @@ if website:
 else:
     st.caption("Company website was not available in the Screener listing.")
 
-st.caption("Sources: NSE India for market classification, quote data and large deals; Screener.in for valuation, financial trends, shareholding, peers and company website. Data is fetched on demand and cached briefly.")
+st.caption("Sources: NSE India when its public feed is available; Screener.in for valuation, financial trends, shareholding, peers and fallback quote data. NSE large deals are shown only from the NSE feed.")
