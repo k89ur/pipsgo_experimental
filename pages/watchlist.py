@@ -126,29 +126,78 @@ pe_history = screener.get("pe_history")
 if isinstance(pe_history, pd.DataFrame) and not pe_history.empty:
     st.markdown('<div class="section-title">Historical P/E · 5 years</div>', unsafe_allow_html=True)
     pe_chart_data = pe_history.copy()
-    pe_chart_data["Date"] = pd.to_datetime(pe_chart_data["Date"])
-    pe_chart_data = pe_chart_data.sort_values("Date").set_index("Date")
-    pe_chart_data = pe_chart_data["P/E"].resample("ME").last().dropna().reset_index()
-    pe_median = float(pe_chart_data["P/E"].median()) if not pe_chart_data.empty else None
+    pe_chart_data["Date"] = pd.to_datetime(pe_chart_data["Date"], errors="coerce")
+    pe_chart_data["P/E"] = pd.to_numeric(pe_chart_data["P/E"], errors="coerce")
+    pe_chart_data = pe_chart_data.dropna(subset=["Date", "P/E"]).sort_values("Date")
 
     if not pe_chart_data.empty:
-        pe_chart = (
+        current_pe = screener.get("pe")
+        if current_pe is None:
+            current_pe = float(pe_chart_data.iloc[-1]["P/E"])
+
+        median_pe = float(pe_chart_data["P/E"].median())
+        q1_pe = float(pe_chart_data["P/E"].quantile(0.25))
+        q3_pe = float(pe_chart_data["P/E"].quantile(0.75))
+        current_vs_median = ((current_pe / median_pe) - 1) * 100 if median_pe else None
+
+        m1, m2, m3, m4 = st.columns(4, gap="small")
+        with m1:
+            st.metric("Current P/E", f"{current_pe:.2f}")
+        with m2:
+            st.metric("5Y Median", f"{median_pe:.2f}")
+        with m3:
+            st.metric("5Y Low Quartile", f"{q1_pe:.2f}")
+        with m4:
+            st.metric("5Y High Quartile", f"{q3_pe:.2f}")
+
+        median_rule = alt.Chart(pd.DataFrame({"P/E": [median_pe]})).mark_rule(strokeDash=[5, 5]).encode(
+            y=alt.Y("P/E:Q")
+        )
+        q1_rule = alt.Chart(pd.DataFrame({"P/E": [q1_pe]})).mark_rule(opacity=0.35).encode(
+            y=alt.Y("P/E:Q")
+        )
+        q3_rule = alt.Chart(pd.DataFrame({"P/E": [q3_pe]})).mark_rule(opacity=0.35).encode(
+            y=alt.Y("P/E:Q")
+        )
+        pe_line = (
             alt.Chart(pe_chart_data)
-            .mark_line(point=False)
+            .mark_line()
             .encode(
                 x=alt.X("Date:T", title=None, axis=alt.Axis(format="MMM YY", labelAngle=0)),
                 y=alt.Y("P/E:Q", title="P/E", scale=alt.Scale(zero=False)),
                 tooltip=[
-                    alt.Tooltip("Date:T", title="Month", format="MMM YYYY"),
+                    alt.Tooltip("Date:T", title="Date", format="dd MMM YYYY"),
                     alt.Tooltip("P/E:Q", title="P/E", format=".2f"),
                 ],
             )
-            .properties(height=300)
-            .interactive()
         )
+        latest = pe_chart_data.tail(1)
+        latest_point = (
+            alt.Chart(latest)
+            .mark_point(size=70, filled=True)
+            .encode(
+                x="Date:T",
+                y="P/E:Q",
+                tooltip=[
+                    alt.Tooltip("Date:T", title="Latest history", format="dd MMM YYYY"),
+                    alt.Tooltip("P/E:Q", title="P/E", format=".2f"),
+                ],
+            )
+        )
+        pe_chart = (q1_rule + q3_rule + median_rule + pe_line + latest_point).properties(height=300).interactive()
         st.altair_chart(pe_chart, use_container_width=True)
-        if pe_median is not None:
-            st.caption(f"Monthly observations from Screener's historical P/E series. 5-year median P/E: {pe_median:.2f}.")
+
+        if current_vs_median is not None:
+            if current_vs_median < 0:
+                valuation_note = f"Current P/E is {abs(current_vs_median):.1f}% below the 5-year median."
+            elif current_vs_median > 0:
+                valuation_note = f"Current P/E is {current_vs_median:.1f}% above the 5-year median."
+            else:
+                valuation_note = "Current P/E is equal to the 5-year median."
+            st.caption(
+                f"Historical observations from Screener's PE-EPS series. {valuation_note} "
+                f"Quartiles show the middle 50% of historical P/E observations."
+            )
 else:
     st.info("Historical P/E series is not available from Screener for this company.")
 
