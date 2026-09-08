@@ -1,3 +1,4 @@
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -51,6 +52,7 @@ if not symbol:
     st.stop()
 
 st.query_params["symbol"] = symbol
+
 
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_screener(stock):
@@ -116,15 +118,55 @@ with c4:
 with c5:
     st.metric("52W Low", f"₹{nse.get('52w_low'):,.2f}" if nse.get("52w_low") is not None else "—")
 
+# -----------------------------------------------------------------------------
+# Growth + margin chart
+# -----------------------------------------------------------------------------
+
 growth = screener.get("growth")
 if isinstance(growth, pd.DataFrame) and not growth.empty:
     st.markdown('<div class="section-title">Growth & margin trend · quarterly YoY</div>', unsafe_allow_html=True)
-    chart = growth.set_index("Quarter")[["Sales Growth", "Earning Growth", "Margin"]].copy()
-    chart.columns = ["Sales Growth %", "Earning Growth %", "Margin %"]
-    st.line_chart(chart, use_container_width=True, height=330)
+
+    chart_data = growth.copy()
+    chart_data["Quarter"] = pd.to_datetime(chart_data["Quarter"], format="%b %Y")
+    chart_data = chart_data.sort_values("Quarter")
+    chart_data = chart_data.rename(
+        columns={
+            "Sales Growth": "Sales Growth %",
+            "Earning Growth": "Earning Growth %",
+            "Margin": "Margin %",
+        }
+    )
+    chart_data = chart_data.melt(
+        id_vars=["Quarter"],
+        value_vars=["Sales Growth %", "Earning Growth %", "Margin %"],
+        var_name="Metric",
+        value_name="Value",
+    ).dropna(subset=["Value"])
+
+    chart = (
+        alt.Chart(chart_data)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("Quarter:T", title=None, axis=alt.Axis(format="MMM YY", labelAngle=0)),
+            y=alt.Y("Value:Q", title="%", scale=alt.Scale(zero=False)),
+            color=alt.Color("Metric:N", title=None),
+            tooltip=[
+                alt.Tooltip("Quarter:T", title="Quarter", format="MMM YYYY"),
+                alt.Tooltip("Metric:N", title="Metric"),
+                alt.Tooltip("Value:Q", title="Value", format=".2f"),
+            ],
+        )
+        .properties(height=330)
+        .interactive()
+    )
+    st.altair_chart(chart, use_container_width=True)
     st.caption("Sales Growth and Earning Growth are YoY growth rates. Margin is OPM when available from Screener; otherwise it is derived from net profit / sales.")
 else:
     st.info("Quarterly growth history is not available from Screener for this company.")
+
+# -----------------------------------------------------------------------------
+# Deals
+# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Institutional / large deals · NSE</div>', unsafe_allow_html=True)
 bulk, block = st.columns(2, gap="large")
@@ -145,12 +187,20 @@ with block:
         cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in block_df.columns]
         st.dataframe(_unique_columns(block_df[cols]), use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
 
+# -----------------------------------------------------------------------------
+# Shareholders
+# -----------------------------------------------------------------------------
+
 st.markdown('<div class="section-title">Shareholders</div>', unsafe_allow_html=True)
 shareholders = screener.get("shareholders")
 if isinstance(shareholders, pd.DataFrame) and not shareholders.empty:
     st.dataframe(_unique_columns(shareholders), use_container_width=True, hide_index=True, height=300)
 else:
     st.info("Shareholding pattern is not available from the Screener company page.")
+
+# -----------------------------------------------------------------------------
+# Market position + peers
+# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Market position</div>', unsafe_allow_html=True)
 left, right = st.columns([1.15, 2.85], gap="large")
@@ -177,6 +227,10 @@ with right:
         st.dataframe(peer_display, use_container_width=True, hide_index=True, height=330)
     else:
         st.info("Peer comparison is not available from Screener for this company.")
+
+# -----------------------------------------------------------------------------
+# Website
+# -----------------------------------------------------------------------------
 
 st.markdown('<div class="section-title">Company website</div>', unsafe_allow_html=True)
 website = screener.get("website")
