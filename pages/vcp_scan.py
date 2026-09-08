@@ -81,10 +81,7 @@ def reset_market_data_dialog():
 def vcp_column_selector(all_columns, saved_columns):
     st.caption("Select the columns you want to display in the VCP results table.")
     for col in all_columns:
-        key = f"vcp_col_select_{col}"
-        if key not in st.session_state:
-            st.session_state[key] = col in saved_columns
-        st.checkbox(col, key=key)
+        st.checkbox(col, value=(col in saved_columns), key=f"vcp_col_select_{col}")
     st.divider()
     if st.button("Apply", type="primary", use_container_width=True, key="apply_vcp_columns"):
         st.session_state.vcp_columns = [
@@ -94,7 +91,7 @@ def vcp_column_selector(all_columns, saved_columns):
 
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-head"><div class="page-title">VCP Scan</div><div class="page-sub">Trend · 52W position · 50DMA position</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="page-head"><div class="page-title">VCP Type Scan</div><div class="page-sub">Trend · 52W position · 50DMA position</div></div>', unsafe_allow_html=True)
 
 if st.session_state.vcp_full_table:
     df = st.session_state.vcp_result
