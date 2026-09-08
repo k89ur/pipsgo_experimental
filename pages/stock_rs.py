@@ -6,7 +6,6 @@ import rs_engine
 from nse_latest_data import install_nse_latest_close, source_check, eod_scan_market_open
 from snapshot_cache import install as install_persistent_snapshot
 from fno_stocks import filter_fno_results
-from watchlist_store import add_stock, remove_stock, is_watched
 
 install_nse_latest_close(rs_engine)
 install_persistent_snapshot(rs_engine)
@@ -44,25 +43,11 @@ def stock_column_config():
     return {"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")}
 
 
-def render_watchable_table(data, key, height, column_config, visible_columns=None):
-    """Render a scan result table with a real per-row Watchlist checkbox."""
+def render_table(data, height, column_config, visible_columns=None):
     table = data.copy()
-    symbols = table["Symbol"].astype(str).str.strip().str.upper().tolist()
-    table.insert(1, "Watch", [is_watched(symbol) for symbol in symbols])
     if visible_columns:
-        ordered = ["S.No", "Watch"] + [c for c in visible_columns if c not in {"S.No", "Watch"}]
-        table = table[[c for c in ordered if c in table.columns]]
-    watch_config = dict(column_config)
-    watch_config["Watch"] = st.column_config.CheckboxColumn("☆", help="Add/remove this stock from Watchlist", width="small")
-    disabled = [column for column in table.columns if column != "Watch"]
-    edited = st.data_editor(table, use_container_width=True, hide_index=True, height=height, column_config=watch_config, disabled=disabled, key=key)
-    for symbol, before, after in zip(symbols, [is_watched(symbol) for symbol in symbols], edited["Watch"].tolist()):
-        if bool(before) != bool(after):
-            if after:
-                add_stock(symbol)
-            else:
-                remove_stock(symbol)
-    return edited
+        table = table[[c for c in visible_columns if c in table.columns]]
+    st.dataframe(table, use_container_width=True, hide_index=True, height=height, column_config=column_config)
 
 
 @st.dialog("Reset scan")
@@ -132,7 +117,7 @@ if st.session_state.stock_full_table:
         if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="stock_full_minimize", help="Return to scanner"):
             st.session_state.stock_full_table = False
             st.rerun()
-    render_watchable_table(full_table, "stock_watch_editor_full", min(900, 95 + max(len(full_table), 1) * 36), stock_column_config())
+    render_table(full_table, min(900, 95 + max(len(full_table), 1) * 36), stock_column_config())
     st.stop()
 
 if st.session_state.fno_full_table:
@@ -154,7 +139,7 @@ if st.session_state.fno_full_table:
         st.markdown('<div class="section-title">F&O Results · 0</div>', unsafe_allow_html=True)
         st.info("No F&O stocks from the current scan results.")
     else:
-        render_watchable_table(fno_full, "fno_watch_editor_full", min(900, 95 + max(len(fno_full), 1) * 36), stock_column_config())
+        render_table(fno_full, min(900, 95 + max(len(fno_full), 1) * 36), stock_column_config())
     st.stop()
 
 main, side = st.columns([4.7, 1.35], gap="large")
@@ -305,7 +290,7 @@ with main:
                 st.session_state.stock_full_table = True
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        render_watchable_table(shown, "stock_watch_editor", min(700, 95 + max(len(shown),1)*36), stock_column_config(), saved_columns)
+        render_table(shown, min(700, 95 + max(len(shown),1)*36), stock_column_config(), saved_columns)
         st.markdown(f'<div class="table-foot">Showing {len(shown):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
 
         fno_df = st.session_state.get("fno_result")
@@ -336,7 +321,7 @@ with main:
                     st.session_state.fno_full_table = True
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-            render_watchable_table(fno_display, "fno_watch_editor", min(700, 95 + max(len(fno_display),1)*36), stock_column_config(), fno_saved_columns)
+            render_table(fno_display, min(700, 95 + max(len(fno_display),1)*36), stock_column_config(), fno_saved_columns)
             st.markdown(f'<div class="table-foot">Showing {len(fno_display):,} of {len(fno_df):,} F&O matches · same RS order as Main Results</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
