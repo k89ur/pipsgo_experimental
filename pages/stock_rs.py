@@ -6,6 +6,7 @@ import rs_engine
 from nse_latest_data import install_nse_latest_close, source_check, eod_scan_market_open
 from snapshot_cache import install as install_persistent_snapshot
 from fno_stocks import filter_fno_results
+from watchlist_store import add_stock, remove_stock, is_watched
 
 install_nse_latest_close(rs_engine)
 install_persistent_snapshot(rs_engine)
@@ -41,6 +42,24 @@ def stock_style(row):
 
 def stock_column_config():
     return {"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")}
+
+
+def render_watchable_table(data, key, height, column_config):
+    """Render a scan result table with a real per-row Watchlist checkbox."""
+    table = data.copy()
+    symbols = table["Symbol"].astype(str).str.strip().str.upper().tolist()
+    table.insert(1, "Watch", [is_watched(symbol) for symbol in symbols])
+    watch_config = dict(column_config)
+    watch_config["Watch"] = st.column_config.CheckboxColumn("☆", help="Add/remove this stock from Watchlist", width="small")
+    disabled = [column for column in table.columns if column != "Watch"]
+    edited = st.data_editor(table, use_container_width=True, hide_index=True, height=height, column_config=watch_config, disabled=disabled, key=key)
+    for symbol, before, after in zip(symbols, table["Watch"].tolist(), edited["Watch"].tolist()):
+        if bool(before) != bool(after):
+            if after:
+                add_stock(symbol)
+            else:
+                remove_stock(symbol)
+    return edited
 
 
 @st.dialog("Reset scan")
@@ -283,7 +302,12 @@ with main:
                 st.session_state.stock_full_table = True
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        st.dataframe(shown_for_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(shown_for_table),1)*36), column_config=stock_column_config())
+        watchable_columns = ["S.No", "Watch"] + [c for c in saved_columns if c != "S.No"]
+        shown_for_table = shown_for_table.copy()
+        shown_for_table = shown_for_table[[c for c in watchable_columns if c in shown_for_table.columns or c == "Watch"]]
+        if "Watch" not in shown_for_table.columns:
+            shown_for_table.insert(1, "Watch", [is_watched(symbol) for symbol in shown["Symbol"].astype(str).str.strip().str.upper()])
+        render_watchable_table(shown_for_table, "stock_watch_editor", min(700, 95 + max(len(shown_for_table),1)*36), stock_column_config())
         st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
 
         fno_df = st.session_state.get("fno_result")
@@ -315,7 +339,11 @@ with main:
                     st.session_state.fno_full_table = True
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-            st.dataframe(fno_shown.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(700, 95 + max(len(fno_shown),1)*36), column_config=stock_column_config())
+            fno_watchable_columns = ["S.No", "Watch"] + [c for c in fno_saved_columns if c != "S.No"]
+            fno_shown = fno_shown.copy()
+            fno_shown.insert(1, "Watch", [is_watched(symbol) for symbol in fno_display["Symbol"].astype(str).str.strip().str.upper()])
+            fno_shown = fno_shown[[c for c in fno_watchable_columns if c in fno_shown.columns]]
+            render_watchable_table(fno_shown, "fno_watch_editor", min(700, 95 + max(len(fno_shown),1)*36), stock_column_config())
             st.markdown(f'<div class="table-foot">Showing {len(fno_shown):,} of {len(fno_df):,} F&O matches · same RS order as Main Results</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
