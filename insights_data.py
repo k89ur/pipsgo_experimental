@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 SCREENER_BASE = "https://www.screener.in"
 NSE_BASE = "https://www.nseindia.com"
+NSE_ARCHIVES_BASE = "https://nsearchives.nseindia.com"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36",
@@ -118,9 +119,6 @@ def _growth_chart(table):
     period_cols = [c for c in table.columns if re.match(r"^(Jun|Sep|Dec|Mar) \d{4}$", str(c))]
     if not period_cols:
         return pd.DataFrame()
-    # Screener may return quarter columns grouped by month. Sort them by date
-    # before calculating YoY so each quarter is compared with the same quarter
-    # four periods earlier and the chart runs chronologically left-to-right.
     period_cols = sorted(period_cols, key=lambda value: pd.to_datetime(value, format="%b %Y"))
 
     sales_row = _value_row(table, ["Sales", "Revenue"])
@@ -315,7 +313,85 @@ def fetch_nse(symbol):
         return _screener_quote_fallback(symbol)
 
 
+def _normalise_deal_table(frame):
+    if frame.empty:
+        return frame
+    table = frame.copy()
+    table.columns = [str(c).strip() for c in table.columns]
+    # NSE archive CSVs have used slightly different casing over time.
+    rename = {}
+    for column in table.columns:
+        key = re.sub(r"[^a-z0-9]", "", column.lower())
+        aliases = {
+            "date": "date",
+            "symbol": "symbol",
+            "name": "name",
+            "securityname": "name",
+            "clientname": "clientName",
+            "buysell": "buySell",
+            "qty": "qty",
+            "quantity": "qty",
+            "watp": "watp",
+            "tradeprice": "watp",
+            "remarks": "remarks",
+        }
+        if key in aliases:
+            rename[column] = aliases[key]
+    table = table.rename(columns=rename)
+    return table
+
+
+def _archive_deals(symbol, mode):
+    filename = "bulk.csv" if mode == "bulk_deals" else "block.csv"
+    url = f"{NSE_ARCHIVES_BASE}/content/equities/{filename}"
+    response = requests.get(url, headers=HEADERS, timeout=20)
+    response.raise_for_status()
+    if not response.content.strip():
+        return pd.DataFrame()
+    table = pd.read_csv(StringIO(response.text))
+    table = _normalise_deal_table(table)
+    symbol_column = next((c for c in table.columns if str(c).lower() == "symbol"), None)
+    if symbol_column is None:
+        return pd.DataFrame()
+    return table[table[symbol_column].astype(str).str.strip().str.upper() == symbol].copy()
+
+
 def _large_deals(symbol, mode):
+    # The public NSE archive CSVs are served from nsearchives.nseindia.com and
+    # avoid the Cloudflare/WAF restrictions affecting NSE's /api endpoints.
+    return _archive_deals(symbol, mode)
+
+
+def fetch_nse_deals(symbol):
+    try:
+        bulk = _large_deals(symbol, "bulk_deals")
+        block = _large_deals(symbol, "block_deals")
+        return {
+            "bulk": bulk,
+            "block": block,
+            "nse_available": True,
+            "source": "NSE official archive CSV",
+        }
+    except Exception:
+        # Keep the API as a secondary fallback if the archive host is
+        # temporarily unavailable.
+        try:
+            return {
+                "bulk": _api_large_deals(symbol, "bulk_deals"),
+                "block": _api_large_deals(symbol, "block_deals"),
+                "nse_available": True,
+                "source": "NSE large-deal API",
+            }
+        except Exception:
+            return {
+                "bulk": pd.DataFrame(),
+                "block": pd.DataFrame(),
+                "nse_available": False,
+                "source": "NSE large-deal feed unavailable from this app server",
+            }
+
+
+def _api_large_deals(symbol, mode):
     session = _nse_session(symbol)
     payload = _request(
         f"{NSE_BASE}/api/snapshot-capital-market-largedeal",
@@ -326,19 +402,3 @@ def _large_deals(symbol, mode):
     rows = payload.get(key) or []
     filtered = [row for row in rows if str(row.get("symbol", "")).strip().upper() == symbol]
     return pd.DataFrame(filtered)
-
-
-def fetch_nse_deals(symbol):
-    try:
-        return {
-            "bulk": _large_deals(symbol, "bulk_deals"),
-            "block": _large_deals(symbol, "block_deals"),
-            "nse_available": True,
-        }
-    except Exception:
-        return {
-            "bulk": pd.DataFrame(),
-            "block": pd.DataFrame(),
-            "nse_available": False,
-            "source": "NSE large-deal feed unavailable from this app server",
-        }
