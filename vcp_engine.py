@@ -79,7 +79,6 @@ def analyze_vcp(
         return {}
 
     close = float(x.Close.iloc[-1])
-    today_high = float(x.High.iloc[-1])
     range52 = x.iloc[-253:-1]
     high52 = float(range52.High.max())
     low52 = float(range52.Low.min())
@@ -205,3 +204,5 @@ def run_scan(
         "matches": len(df),
     }
     return df, stats
+
+# Deployment sync marker: keep UI and engine signatures aligned for the simplified VCP scanner.
