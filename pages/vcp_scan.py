@@ -18,10 +18,10 @@ if "vcp_columns" not in st.session_state:
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
     "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
-    "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK", "TradingView",
+    "TradingView",
 ]
 
-BOOL_COLUMNS = ["50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK"]
+BOOL_COLUMNS = []
 
 
 def column_config():
@@ -38,10 +38,6 @@ def column_config():
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
-        "50DMA Rising": st.column_config.TextColumn("50 DMA ↑"),
-        "150DMA Rising": st.column_config.TextColumn("150 DMA ↑"),
-        "200DMA Rising": st.column_config.TextColumn("200 DMA ↑"),
-        "Trend OK": st.column_config.TextColumn("TREND"),
         "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
     }
 
@@ -56,7 +52,10 @@ def prepare_table(data):
 
 def visible_vcp_columns():
     saved = st.session_state.get("vcp_columns")
-    return saved if saved else COLUMNS.copy()
+    if saved:
+        valid = [col for col in saved if col in COLUMNS]
+        return valid or COLUMNS.copy()
+    return COLUMNS.copy()
 
 
 @st.dialog("Reset Market Data")
