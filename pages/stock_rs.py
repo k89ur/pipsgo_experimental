@@ -132,7 +132,7 @@ if st.session_state.stock_full_table:
         if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="stock_full_minimize", help="Return to scanner"):
             st.session_state.stock_full_table = False
             st.rerun()
-    st.dataframe(full_table.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(900, 95 + max(len(full_table), 1) * 36), column_config=stock_column_config())
+    render_watchable_table(full_table, "stock_watch_editor_full", min(900, 95 + max(len(full_table), 1) * 36), stock_column_config())
     st.stop()
 
 if st.session_state.fno_full_table:
@@ -154,7 +154,7 @@ if st.session_state.fno_full_table:
         st.markdown('<div class="section-title">F&O Results · 0</div>', unsafe_allow_html=True)
         st.info("No F&O stocks from the current scan results.")
     else:
-        st.dataframe(fno_full.style.apply(stock_style, axis=1), use_container_width=True, hide_index=True, height=min(900, 95 + max(len(fno_full), 1) * 36), column_config=stock_column_config())
+        render_watchable_table(fno_full, "fno_watch_editor_full", min(900, 95 + max(len(fno_full), 1) * 36), stock_column_config())
     st.stop()
 
 main, side = st.columns([4.7, 1.35], gap="large")
