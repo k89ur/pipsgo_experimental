@@ -119,6 +119,40 @@ with c5:
     st.metric("52W Low", f"₹{nse.get('52w_low'):,.2f}" if nse.get("52w_low") is not None else "—")
 
 # -----------------------------------------------------------------------------
+# Historical P/E
+# -----------------------------------------------------------------------------
+
+pe_history = screener.get("pe_history")
+if isinstance(pe_history, pd.DataFrame) and not pe_history.empty:
+    st.markdown('<div class="section-title">Historical P/E · 5 years</div>', unsafe_allow_html=True)
+    pe_chart_data = pe_history.copy()
+    pe_chart_data["Date"] = pd.to_datetime(pe_chart_data["Date"])
+    pe_chart_data = pe_chart_data.sort_values("Date").set_index("Date")
+    pe_chart_data = pe_chart_data["P/E"].resample("ME").last().dropna().reset_index()
+    pe_median = float(pe_chart_data["P/E"].median()) if not pe_chart_data.empty else None
+
+    if not pe_chart_data.empty:
+        pe_chart = (
+            alt.Chart(pe_chart_data)
+            .mark_line(point=False)
+            .encode(
+                x=alt.X("Date:T", title=None, axis=alt.Axis(format="MMM YY", labelAngle=0)),
+                y=alt.Y("P/E:Q", title="P/E", scale=alt.Scale(zero=False)),
+                tooltip=[
+                    alt.Tooltip("Date:T", title="Month", format="MMM YYYY"),
+                    alt.Tooltip("P/E:Q", title="P/E", format=".2f"),
+                ],
+            )
+            .properties(height=300)
+            .interactive()
+        )
+        st.altair_chart(pe_chart, use_container_width=True)
+        if pe_median is not None:
+            st.caption(f"Monthly observations from Screener's historical P/E series. 5-year median P/E: {pe_median:.2f}.")
+else:
+    st.info("Historical P/E series is not available from Screener for this company.")
+
+# -----------------------------------------------------------------------------
 # Growth + margin chart
 # -----------------------------------------------------------------------------
 
@@ -148,7 +182,7 @@ if isinstance(growth, pd.DataFrame) and not growth.empty:
         .mark_line(point=True)
         .encode(
             x=alt.X("Quarter:T", title=None, axis=alt.Axis(format="MMM YY", labelAngle=0)),
-            y=alt.Y("Value:Q", title="%", scale=alt.Scale(zero=False)),
+            y=alt.Y("Value:Q", title="%", scale=alt.Scale(zero=True)),
             color=alt.Color("Metric:N", title=None),
             tooltip=[
                 alt.Tooltip("Quarter:T", title="Quarter", format="MMM YYYY"),
@@ -160,7 +194,7 @@ if isinstance(growth, pd.DataFrame) and not growth.empty:
         .interactive()
     )
     st.altair_chart(chart, use_container_width=True)
-    st.caption("Sales Growth and Earning Growth are YoY growth rates. Margin is OPM when available from Screener; otherwise it is derived from net profit / sales.")
+    st.caption("Sales Growth and Earning Growth are YoY growth rates calculated from Screener quarterly figures. Margin is OPM when available; otherwise it is derived from net profit / sales.")
 else:
     st.info("Quarterly growth history is not available from Screener for this company.")
 
@@ -242,4 +276,4 @@ if website:
 else:
     st.caption("Company website was not available in the Screener listing.")
 
-st.caption("Sources: NSE India for market classification, quote data and large deals; Screener.in for valuation, financial trends, shareholding, peers and company website. Data is fetched on demand and cached briefly.")
+st.caption("Sources: NSE India for market classification, quote data and large deals; Screener.in for valuation, historical P/E, financial trends, shareholding, peers and company website. Data is fetched on demand and cached briefly.")
