@@ -1,10 +1,12 @@
 from datetime import date, timedelta
+from io import BytesIO
 
 import cloudscraper
 import pandas as pd
 
 
 NSE_BASE = "https://www.nseindia.com"
+NSE_ARCHIVES_BASE = "https://nsearchives.nseindia.com"
 NSE_REPORT_URL = f"{NSE_BASE}/report-detail/display-bulk-and-block-deals"
 NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
@@ -17,9 +19,7 @@ NSE_HEADERS = {
     "Connection": "keep-alive",
 }
 
-
 REPORT_TYPES = {
-    "bulk": ("bulk-deals", "bulk_deals"),
     "block": ("block-deals", "block_deals"),
     "short_selling": ("short-selling", "short_selling"),
 }
@@ -85,10 +85,18 @@ def _normalise_columns(frame):
     return result
 
 
+def _filter_symbol(frame, symbol):
+    if frame.empty or "symbol" not in frame.columns:
+        return frame
+    wanted = str(symbol).strip().upper()
+    return frame[
+        frame["symbol"].astype(str).str.strip().str.upper() == wanted
+    ].copy()
+
+
 def _request_historical(session, report, option_type, from_date, to_date):
-    url = f"{NSE_BASE}/api/historical/{report}"
     response = session.get(
-        url,
+        f"{NSE_BASE}/api/historical/{report}",
         params={
             "from": from_date,
             "to": to_date,
@@ -106,13 +114,31 @@ def _historical(session, report, option_type, from_date, to_date):
     return _normalise_columns(pd.DataFrame(_rows(payload)))
 
 
-def _filter_symbol(frame, symbol):
-    if frame.empty or "symbol" not in frame.columns:
-        return frame
-    wanted = str(symbol).strip().upper()
-    return frame[
-        frame["symbol"].astype(str).str.strip().str.upper() == wanted
-    ].copy()
+def _bulk_archive(start_date, end_date, symbol):
+    """Fetch NSE's official one-file historical bulk-deals archive."""
+    filename = (
+        f"Bulk-Deals-{start_date:%d-%m-%Y}-to-{end_date:%d-%m-%Y}.csv"
+    )
+    urls = (
+        f"{NSE_ARCHIVES_BASE}/content/equities/{filename}",
+        f"https://archives.nseindia.com/content/equities/{filename}",
+    )
+
+    last_error = None
+    for url in urls:
+        try:
+            session = _session()
+            response = session.get(url, timeout=30)
+            response.raise_for_status()
+            content = response.content
+            if not content or content.lstrip().startswith(b"<"):
+                raise ValueError("NSE archive returned HTML instead of CSV")
+            frame = pd.read_csv(BytesIO(content))
+            return _filter_symbol(_normalise_columns(frame), symbol), None
+        except Exception as exc:
+            last_error = exc
+
+    return pd.DataFrame(), f"bulk archive: {last_error}"
 
 
 def fetch_nse_historical_deals(symbol, days=365):
@@ -139,17 +165,23 @@ def fetch_nse_historical_deals(symbol, days=365):
         failed_reports = []
         successful_reports = []
 
+        # Bulk deals have a dedicated official NSE historical-range archive.
+        bulk_frame, bulk_error = _bulk_archive(start, end, symbol)
+        frames["bulk"] = bulk_frame
+        if not bulk_frame.empty:
+            successful_reports.append("bulk")
+        elif bulk_error:
+            failed_reports.append(bulk_error)
+
+        # Block and short-selling remain on NSE's historical report API.
+        # Keep these as single range requests; never fall back to hundreds of
+        # per-day downloads that make the Insights page excessively slow.
         for key, (endpoint, option_type) in REPORT_TYPES.items():
             try:
-                frame = _historical(
-                    session,
-                    endpoint,
-                    option_type,
-                    from_date,
-                    to_date,
-                )
+                frame = _historical(session, endpoint, option_type, from_date, to_date)
                 frames[key] = _filter_symbol(frame, symbol)
-                successful_reports.append(key)
+                if not frames[key].empty:
+                    successful_reports.append(key)
             except Exception as exc:
                 frames[key] = pd.DataFrame()
                 failed_reports.append(f"{key}: {exc}")
@@ -161,9 +193,9 @@ def fetch_nse_historical_deals(symbol, days=365):
             "failed_reports": failed_reports,
         }
         if not successful_reports:
-            result["error"] = "All NSE historical deal reports failed to load."
+            result["error"] = "NSE historical deal data could not be loaded."
         elif failed_reports:
-            result["warning"] = "Some NSE historical deal reports failed; successful reports are still shown."
+            result["warning"] = "Some NSE deal sources failed; successful records are still shown."
         return result
     except Exception as exc:
         return {**empty, "error": str(exc)}
