@@ -21,6 +21,8 @@ COLUMNS = [
     "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK", "TradingView",
 ]
 
+BOOL_COLUMNS = ["50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK"]
+
 
 def column_config():
     return {
@@ -36,12 +38,20 @@ def column_config():
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
-        "50DMA Rising": st.column_config.CheckboxColumn("50 DMA ↑"),
-        "150DMA Rising": st.column_config.CheckboxColumn("150 DMA ↑"),
-        "200DMA Rising": st.column_config.CheckboxColumn("200 DMA ↑"),
-        "Trend OK": st.column_config.CheckboxColumn("TREND"),
+        "50DMA Rising": st.column_config.TextColumn("50 DMA ↑"),
+        "150DMA Rising": st.column_config.TextColumn("150 DMA ↑"),
+        "200DMA Rising": st.column_config.TextColumn("200 DMA ↑"),
+        "Trend OK": st.column_config.TextColumn("TREND"),
         "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
     }
+
+
+def prepare_table(data):
+    table = data.copy()
+    for col in BOOL_COLUMNS:
+        if col in table.columns:
+            table[col] = table[col].map({True: "YES", False: "NO"}).fillna("—")
+    return table
 
 
 def visible_vcp_columns():
@@ -70,13 +80,16 @@ def reset_market_data_dialog():
 @st.dialog("VCP Table Columns")
 def vcp_column_selector(all_columns, saved_columns):
     st.caption("Select the columns you want to display in the VCP results table.")
-    selected = []
     for col in all_columns:
-        if st.checkbox(col, value=(col in saved_columns), key=f"vcp_col_select_{col}"):
-            selected.append(col)
+        key = f"vcp_col_select_{col}"
+        if key not in st.session_state:
+            st.session_state[key] = col in saved_columns
+        st.checkbox(col, key=key)
     st.divider()
     if st.button("Apply", type="primary", use_container_width=True, key="apply_vcp_columns"):
-        st.session_state.vcp_columns = selected or ["Symbol"]
+        st.session_state.vcp_columns = [
+            col for col in all_columns if st.session_state.get(f"vcp_col_select_{col}", False)
+        ] or ["Symbol"]
         st.rerun()
 
 
@@ -88,14 +101,20 @@ if st.session_state.vcp_full_table:
     if df is None or df.empty:
         st.info("Run a VCP scan first to open the full table.")
     else:
-        full = df[[c for c in visible_vcp_columns() if c in df.columns]].copy()
+        full = prepare_table(df[[c for c in visible_vcp_columns() if c in df.columns]])
         full.insert(0, "S.No", range(1, len(full) + 1))
         _, close = st.columns([20, 1], gap="small")
         with close:
             if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="vcp_minimize", help="Return to scanner"):
                 st.session_state.vcp_full_table = False
                 st.rerun()
-        st.dataframe(full, use_container_width=True, hide_index=True, height=min(900, 95 + max(len(full), 1) * 36), column_config=column_config())
+        st.dataframe(
+            full,
+            use_container_width=True,
+            hide_index=True,
+            height=min(900, 95 + max(len(full), 1) * 36),
+            column_config=column_config(),
+        )
     st.stop()
 
 main, side = st.columns([4.7, 1.35], gap="large")
@@ -191,7 +210,7 @@ with main:
             st.info("No stocks matched the current VCP settings.")
         else:
             selected_columns = visible_vcp_columns()
-            tool1, tool2, tool3, spacer = st.columns([0.45, 0.45, 0.45, 18], gap="small")
+            spacer, tool1, tool2, tool3 = st.columns([18, 0.45, 0.45, 0.45], gap="small")
             with tool1:
                 if st.button("", icon=":material/view_column:", type="tertiary", width=30, key="vcp_columns", help="Select columns"):
                     vcp_column_selector(COLUMNS, selected_columns)
@@ -202,7 +221,13 @@ with main:
                 if st.button("", icon=":material/fullscreen:", type="tertiary", width=30, key="vcp_full", help="Full screen view"):
                     st.session_state.vcp_full_table = True
                     st.rerun()
-            view = df[[c for c in selected_columns if c in df.columns]].copy()
-            st.dataframe(view.head(50), use_container_width=True, hide_index=True, height=min(650, 95 + min(len(view), 15) * 36), column_config=column_config())
+            view = prepare_table(df[[c for c in selected_columns if c in df.columns]])
+            st.dataframe(
+                view.head(50),
+                use_container_width=True,
+                hide_index=True,
+                height=min(650, 95 + min(len(view), 15) * 36),
+                column_config=column_config(),
+            )
             if len(df) > 50:
                 st.caption(f"Showing top 50 of {len(df):,} matches. Use Full screen view for the complete table.")
