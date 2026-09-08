@@ -27,16 +27,16 @@ st.markdown("""
 
 index_page = st.Page("pages/index_rs.py", title="Index RS", icon=":material/leaderboard:", url_path="index-rs", default=True)
 stock_page = st.Page("pages/stock_rs.py", title="Stock RS + Technical", icon=":material/query_stats:", url_path="stock-rs")
-watchlist_page = st.Page("pages/watchlist.py", title="Watchlist", icon=":material/star:", url_path="watchlist")
+insights_page = st.Page("pages/watchlist.py", title="Insights", icon=":material/analytics:", url_path="insights")
 
 with st.sidebar:
     st.markdown('<div class="sidebar-label">Scanners</div>', unsafe_allow_html=True)
     st.caption("Choose a scanner")
     st.divider()
     st.markdown('<div class="sidebar-label">Research</div>', unsafe_allow_html=True)
-    st.caption("Shortlist and monitor stocks")
+    st.caption("Company intelligence and market context")
     st.divider()
     st.markdown('<div class="help">PipsGoX market scanners</div>', unsafe_allow_html=True)
 
-pg = st.navigation([index_page, stock_page, watchlist_page], position="sidebar")
+pg = st.navigation([index_page, stock_page, insights_page], position="sidebar")
 pg.run()
