@@ -9,7 +9,8 @@ st.markdown('<div class="page-head"><div class="page-title">Watchlist Monitor</d
 records = get_watchlist_records()
 symbols = [record["symbol"] for record in records]
 
-st.markdown(f'<div class="section-title">My Watchlist · {len(symbols):,}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="section-title watchlist-section-title">My Watchlist · {len(symbols):,}</div>', unsafe_allow_html=True)
+st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
 
 if not symbols:
     st.markdown('<div class="empty-state"><div class="empty-title">No stocks yet</div><div class="empty-sub">Use the Watchlist action from Stock RS results to add a shortlisted stock.</div></div>', unsafe_allow_html=True)
@@ -42,12 +43,9 @@ for record in records:
             "RS": row.get("RS Rating"),
             "3M": row.get("3M %"),
             "6M": row.get("6M %"),
-            "9M": row.get("9M %"),
             "12M": row.get("12M %"),
             "52W High": row.get("52W High"),
             "52WH < %": row.get("From 52W High %"),
-            "Index": row.get("Index", "—"),
-            "Industry": row.get("Industry", "—"),
         }
     )
 
@@ -55,17 +53,14 @@ monitor = pd.DataFrame(rows)
 
 column_config = {
     "Watch": st.column_config.CheckboxColumn("☆", width="small", help="Remove this stock from Watchlist"),
-    "Symbol": st.column_config.TextColumn("SYMBOL", width="small"),
+    "Symbol": st.column_config.TextColumn("SYMBOL", width="small", pinned=True),
     "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f", width="small"),
     "RS": st.column_config.NumberColumn("RS", format="%d", width="small"),
     "3M": st.column_config.NumberColumn("3M", format="%.1f%%", width="small"),
     "6M": st.column_config.NumberColumn("6M", format="%.1f%%", width="small"),
-    "9M": st.column_config.NumberColumn("9M", format="%.1f%%", width="small"),
     "12M": st.column_config.NumberColumn("12M", format="%.1f%%", width="small"),
     "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f", width="small"),
     "52WH < %": st.column_config.NumberColumn("52WH < %", format="%.1f%%", width="small"),
-    "Index": st.column_config.TextColumn("INDEX", width="medium"),
-    "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"),
 }
 
 disabled = [column for column in monitor.columns if column != "Watch"]
@@ -80,9 +75,8 @@ edited = st.data_editor(
     key="watchlist_monitor_editor",
 )
 
-# The only editable field is the compact Watch checkbox.
 for symbol, after in zip(symbols, edited["Watch"].tolist()):
     if not bool(after):
         remove_stock(symbol)
 
-st.caption("Market columns use the latest Stock RS scan available in this session. Detailed stock research and chart view will be added next.")
+st.caption("Latest Stock RS values available in this session. Each stock remains in the browser Watchlist for 15 days from the time it was added.")
