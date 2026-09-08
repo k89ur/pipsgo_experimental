@@ -49,7 +49,7 @@ def _save(records):
     controller = _controller()
     if records:
         latest_expiry = max(
-            datetime.fromisoformat(record["added_at"]).replace(tzinfo=timezone.utc)
+            datetime.fromisoformat(record["added_at"]).astimezone(timezone.utc)
             + timedelta(days=WATCHLIST_DAYS)
             for record in records
         )
@@ -80,18 +80,20 @@ def _load():
         except Exception:
             records = []
 
+    migrated = False
     # One-time migration from the original session-only Watchlist.
     if not records and st.session_state.get(WATCHLIST_KEY):
         records = st.session_state[WATCHLIST_KEY]
+        migrated = True
 
+    original = records
     records = _normalise_records(records)
     st.session_state[WATCHLIST_KEY] = records
     st.session_state.watchlist_loaded = True
-    if records:
-        # Refresh the cookie after cleanup/migration while keeping each stock's own age.
+
+    # Only write during migration or when expired/invalid entries were removed.
+    if migrated or records != original:
         _save(records)
-    elif raw:
-        controller.remove(WATCHLIST_COOKIE)
     return records
 
 
