@@ -1,91 +1,196 @@
 import pandas as pd
 import streamlit as st
-import yfinance as yf
 
-from watchlist_store import get_watchlist_records, remove_stock
+from insights_data import fetch_nse, fetch_nse_deals, fetch_screener, search_screener
+
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-head"><div class="page-title">Watchlist Monitor</div><div class="page-sub">Compact market monitor for your 15-day shortlist</div></div>', unsafe_allow_html=True)
 
-records = get_watchlist_records()
-symbols = [record["symbol"] for record in records]
-
-st.markdown(f'<div class="section-title watchlist-section-title">My Watchlist · {len(symbols):,}</div>', unsafe_allow_html=True)
-st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
-
-if not symbols:
-    st.markdown('<div class="empty-state"><div class="empty-title">No stocks yet</div><div class="empty-sub">Use the Watchlist action from Stock RS results to add a shortlisted stock.</div></div>', unsafe_allow_html=True)
-    st.caption("Watchlist is stored in this browser and each stock expires automatically 15 days after it is added.")
-    st.stop()
-
-# Use the latest scan data already available in this Streamlit session when possible.
-scan_frames = []
-for key in ("stock_result", "fno_result"):
-    frame = st.session_state.get(key)
-    if isinstance(frame, pd.DataFrame) and not frame.empty:
-        scan_frames.append(frame)
-
-if scan_frames:
-    market = pd.concat(scan_frames, ignore_index=True)
-    market["Symbol"] = market["Symbol"].astype(str).str.strip().str.upper()
-    market = market.drop_duplicates("Symbol", keep="first").set_index("Symbol")
-else:
-    market = pd.DataFrame().set_index(pd.Index([], name="Symbol"))
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_classification(symbol):
-    try:
-        info = yf.Ticker(f"{symbol}.NS").info
-        return info.get("sector") or "—", info.get("industry") or "—"
-    except Exception:
-        return "—", "—"
-
-rows = []
-for record in records:
-    symbol = record["symbol"]
-    row = market.loc[symbol].to_dict() if symbol in market.index else {}
-    sector = row.get("Sector") or row.get("sector")
-    industry = row.get("Industry") or row.get("industry")
-    if not sector or not industry:
-        fetched_sector, fetched_industry = fetch_classification(symbol)
-        sector = sector or fetched_sector
-        industry = industry or fetched_industry
-    rows.append(
-        {
-            "Watch": True,
-            "Symbol": symbol,
-            "LTP": row.get("LTP"),
-            "RS": row.get("RS Rating"),
-            "Sector": sector or "—",
-            "Industry": industry or "—",
-        }
-    )
-
-monitor = pd.DataFrame(rows)
-
-column_config = {
-    "Watch": st.column_config.CheckboxColumn("☆", width="small", help="Remove this stock from Watchlist"),
-    "Symbol": st.column_config.TextColumn("SYMBOL", width="small", pinned=True),
-    "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f", width="small"),
-    "RS": st.column_config.NumberColumn("RS", format="%d", width="small"),
-    "Sector": st.column_config.TextColumn("SECTOR", width="medium"),
-    "Industry": st.column_config.TextColumn("INDUSTRY", width="medium"),
-}
-
-disabled = [column for column in monitor.columns if column != "Watch"]
-edited = st.data_editor(
-    monitor,
-    use_container_width=True,
-    hide_index=True,
-    height=min(650, 72 + max(len(monitor), 1) * 34),
-    row_height=32,
-    column_config=column_config,
-    disabled=disabled,
-    key="watchlist_monitor_editor",
+st.markdown(
+    '<div class="page-head"><div class="page-title">Insights</div>'
+    '<div class="page-sub">Fundamental, ownership and market-position intelligence</div></div>',
+    unsafe_allow_html=True,
 )
 
-for symbol, after in zip(symbols, edited["Watch"].tolist()):
-    if not bool(after):
-        remove_stock(symbol)
+with st.form("insights_search", clear_on_submit=False):
+    query = st.text_input(
+        "Search stock",
+        value=str(st.query_params.get("symbol", "")).strip().upper(),
+        placeholder="Search NSE symbol or company name…",
+        label_visibility="collapsed",
+    )
+    submitted = st.form_submit_button("Search", type="primary", use_container_width=False)
 
-st.caption("LTP and RS use the latest Stock RS data available in this session. Sector and Industry are read from Yahoo Finance when scan data does not include them.")
+if submitted:
+    clean_query = query.strip().upper()
+    if clean_query:
+        try:
+            matches = search_screener(clean_query)
+        except Exception as exc:
+            st.error(f"Unable to search Screener. ({exc})")
+            st.stop()
+        if not matches:
+            st.warning(f"No company found for '{clean_query}'.")
+            st.stop()
+        selected = matches[0]
+        symbol = str(selected.get("url", "")).split("/company/")[-1].strip("/").split("/")[0].upper()
+        if not symbol:
+            symbol = clean_query
+        st.query_params["symbol"] = symbol
+        st.session_state["insights_symbol"] = symbol
+        st.rerun()
+
+symbol = str(st.session_state.get("insights_symbol", st.query_params.get("symbol", ""))).strip().upper()
+
+if not symbol:
+    st.markdown(
+        '<div class="empty-state"><div class="empty-title">Search a stock to open Insights</div>'
+        '<div class="empty-sub">Data is fetched on demand from NSE and Screener.in. No scanner calculations are changed.</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+st.query_params["symbol"] = symbol
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_screener(stock):
+    return fetch_screener(stock)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_nse(stock):
+    return fetch_nse(stock)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_deals(stock):
+    return fetch_nse_deals(stock)
+
+
+try:
+    with st.spinner(f"Loading {symbol} Insights…"):
+        screener = cached_screener(symbol)
+        nse = cached_nse(symbol)
+        deals = cached_deals(symbol)
+except Exception as exc:
+    st.error(f"Unable to load Insights for {symbol}. ({exc})")
+    st.stop()
+
+company_name = screener.get("company_name") or symbol
+sector = nse.get("sector") or screener.get("sector") or "—"
+industry = nse.get("industry") or screener.get("industry") or "—"
+
+st.markdown(
+    f'<div class="page-head"><div class="page-title">{company_name}</div>'
+    f'<div class="page-sub">{symbol} · {sector} · {industry}</div></div>',
+    unsafe_allow_html=True,
+)
+
+# -----------------------------------------------------------------------------
+# Snapshot
+# -----------------------------------------------------------------------------
+
+st.markdown('<div class="section-title">Valuation & company snapshot</div>', unsafe_allow_html=True)
+c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+with c1:
+    st.metric("P/E", f"{screener.get('pe'):.2f}" if screener.get("pe") is not None else "—")
+with c2:
+    market_cap = nse.get("market_cap") or screener.get("market_cap")
+    st.metric("Market Cap", f"₹{market_cap:,.0f} Cr" if market_cap is not None else "—")
+with c3:
+    st.metric("LTP", f"₹{nse.get('ltp'):,.2f}" if nse.get("ltp") is not None else "—")
+with c4:
+    st.metric("52W High", f"₹{nse.get('52w_high'):,.2f}" if nse.get("52w_high") is not None else "—")
+with c5:
+    st.metric("52W Low", f"₹{nse.get('52w_low'):,.2f}" if nse.get("52w_low") is not None else "—")
+
+# -----------------------------------------------------------------------------
+# Growth + margin chart
+# -----------------------------------------------------------------------------
+
+growth = screener.get("growth")
+if isinstance(growth, pd.DataFrame) and not growth.empty:
+    st.markdown('<div class="section-title">Growth & margin trend · quarterly YoY</div>', unsafe_allow_html=True)
+    chart = growth.set_index("Quarter")[["Sales Growth", "Earning Growth", "Margin"]].copy()
+    chart.columns = ["Sales Growth %", "Earning Growth %", "Margin %"]
+    st.line_chart(chart, use_container_width=True, height=330)
+    st.caption("Sales Growth and Earning Growth are quarter-on-quarter-year (YoY) growth rates. Margin is OPM when available from Screener; otherwise it is derived from net profit / sales.")
+else:
+    st.info("Quarterly growth history is not available from Screener for this company.")
+
+# -----------------------------------------------------------------------------
+# Deals
+# -----------------------------------------------------------------------------
+
+st.markdown('<div class="section-title">Institutional / large deals · NSE</div>', unsafe_allow_html=True)
+bulk, block = st.columns(2, gap="large")
+with bulk:
+    st.markdown("**Bulk deals**")
+    bulk_df = deals.get("bulk", pd.DataFrame())
+    if bulk_df.empty:
+        st.caption("No latest NSE bulk deal reported for this symbol.")
+    else:
+        cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in bulk_df.columns]
+        st.dataframe(bulk_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(bulk_df) * 36))
+with block:
+    st.markdown("**Block deals**")
+    block_df = deals.get("block", pd.DataFrame())
+    if block_df.empty:
+        st.caption("No latest NSE block deal reported for this symbol.")
+    else:
+        cols = [c for c in ["date", "clientName", "buySell", "qty", "watp", "remarks"] if c in block_df.columns]
+        st.dataframe(block_df[cols], use_container_width=True, hide_index=True, height=min(300, 70 + len(block_df) * 36))
+
+# -----------------------------------------------------------------------------
+# Shareholders
+# -----------------------------------------------------------------------------
+
+st.markdown('<div class="section-title">Shareholders</div>', unsafe_allow_html=True)
+shareholders = screener.get("shareholders")
+if isinstance(shareholders, pd.DataFrame) and not shareholders.empty:
+    st.dataframe(shareholders, use_container_width=True, hide_index=True, height=300)
+else:
+    st.info("Shareholding pattern is not available from the Screener company page.")
+
+# -----------------------------------------------------------------------------
+# Market position + peers
+# -----------------------------------------------------------------------------
+
+st.markdown('<div class="section-title">Market position</div>', unsafe_allow_html=True)
+left, right = st.columns([1.15, 2.85], gap="large")
+with left:
+    st.markdown(f"**Sector**  \n{sector}")
+    st.markdown(f"**Industry**  \n{industry}")
+    market_share = screener.get("market_share")
+    if market_share is None:
+        st.markdown("**Market Share**  \n—")
+        st.caption("NSE/Screener do not publish a standardized market-share field for every company.")
+    else:
+        st.markdown(f"**Market Share**  \n{market_share:.2f}%")
+    indices = nse.get("indices") or []
+    if indices:
+        st.markdown("**NSE indices**")
+        st.caption(", ".join(indices))
+
+with right:
+    peers = screener.get("peers")
+    if isinstance(peers, pd.DataFrame) and not peers.empty:
+        peer_display = peers.copy()
+        first_col = peer_display.columns[0]
+        peer_display = peer_display.rename(columns={first_col: "Company"})
+        st.dataframe(peer_display, use_container_width=True, hide_index=True, height=330)
+    else:
+        st.info("Peer comparison is not available from Screener for this company.")
+
+# -----------------------------------------------------------------------------
+# Website
+# -----------------------------------------------------------------------------
+
+st.markdown('<div class="section-title">Company website</div>', unsafe_allow_html=True)
+website = screener.get("website")
+if website:
+    st.link_button("Open company website ↗", website)
+else:
+    st.caption("Company website was not available in the Screener listing.")
+
+st.caption("Sources: NSE India for market classification, quote data and large deals; Screener.in for valuation, financial trends, shareholding, peers and company website. Data is fetched on demand and cached briefly.")
