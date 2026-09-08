@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
@@ -7,14 +8,30 @@ from streamlit_cookies_controller import CookieController
 WATCHLIST_KEY = "watchlist_symbols"
 WATCHLIST_COOKIE = "pipsgo_watchlist_v1"
 WATCHLIST_DAYS = 15
+CONTROLLER_KEY = "watchlist_cookie_controller"
+LOADED_KEY = "watchlist_cookie_loaded"
 
 
 def _controller():
-    return CookieController(key="pipsgo_watchlist_cookie")
+    controller = st.session_state.get(CONTROLLER_KEY)
+    if controller is None:
+        controller = CookieController(key="pipsgo_watchlist_cookie")
+        st.session_state[CONTROLLER_KEY] = controller
+    return controller
 
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _parse_added_at(value):
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def _normalise_records(records):
@@ -27,12 +44,7 @@ def _normalise_records(records):
             added_at = now
         elif isinstance(record, dict):
             symbol = str(record.get("symbol", "")).strip().upper()
-            try:
-                added_at = datetime.fromisoformat(str(record.get("added_at", "")))
-                if added_at.tzinfo is None:
-                    added_at = added_at.replace(tzinfo=timezone.utc)
-            except Exception:
-                added_at = now
+            added_at = _parse_added_at(record.get("added_at")) or now
         else:
             continue
         if not symbol or symbol in seen:
@@ -43,45 +55,57 @@ def _normalise_records(records):
     return cleaned
 
 
+def _write_cookie(records):
+    controller = _controller()
+    if not records:
+        controller.remove(WATCHLIST_COOKIE)
+        return
+
+    latest_expiry = max(
+        datetime.fromisoformat(record["added_at"]).astimezone(timezone.utc)
+        + timedelta(days=WATCHLIST_DAYS)
+        for record in records
+    )
+    controller.set(
+        WATCHLIST_COOKIE,
+        {
+            "value": json.dumps(records, separators=(",", ":")),
+            "expiry_date": latest_expiry.isoformat(),
+        },
+    )
+
+
 def _save(records):
     records = _normalise_records(records)
     st.session_state[WATCHLIST_KEY] = records
-    controller = _controller()
-    if records:
-        latest_expiry = max(
-            datetime.fromisoformat(record["added_at"]).astimezone(timezone.utc)
-            + timedelta(days=WATCHLIST_DAYS)
-            for record in records
-        )
-        controller.set(
-            WATCHLIST_COOKIE,
-            {
-                "value": json.dumps(records, separators=(",", ":")),
-                "expiry_date": latest_expiry.isoformat(),
-            },
-        )
-    else:
-        controller.remove(WATCHLIST_COOKIE)
+    _write_cookie(records)
     return records
 
 
-def _load():
-    if WATCHLIST_KEY in st.session_state and st.session_state.get("watchlist_loaded"):
-        return _normalise_records(st.session_state[WATCHLIST_KEY])
-
+def _read_cookie():
     controller = _controller()
     raw = controller.get(WATCHLIST_COOKIE)
-    records = []
-    if raw:
-        try:
-            if isinstance(raw, dict):
-                raw = raw.get("value")
-            records = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
-            records = []
+    if raw is None:
+        controller.getAll()
+        time.sleep(1.0)
+        raw = controller.get(WATCHLIST_COOKIE)
 
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return []
+
+
+def _load():
+    if st.session_state.get(LOADED_KEY):
+        return _normalise_records(st.session_state.get(WATCHLIST_KEY, []))
+
+    records = _read_cookie()
     migrated = False
-    # One-time migration from the original session-only Watchlist.
     if not records and st.session_state.get(WATCHLIST_KEY):
         records = st.session_state[WATCHLIST_KEY]
         migrated = True
@@ -89,9 +113,8 @@ def _load():
     original = records
     records = _normalise_records(records)
     st.session_state[WATCHLIST_KEY] = records
-    st.session_state.watchlist_loaded = True
+    st.session_state[LOADED_KEY] = True
 
-    # Only write during migration or when expired/invalid entries were removed.
     if migrated or records != original:
         _save(records)
     return records
