@@ -44,16 +44,19 @@ def stock_column_config():
     return {"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small")}
 
 
-def render_watchable_table(data, key, height, column_config):
+def render_watchable_table(data, key, height, column_config, visible_columns=None):
     """Render a scan result table with a real per-row Watchlist checkbox."""
     table = data.copy()
     symbols = table["Symbol"].astype(str).str.strip().str.upper().tolist()
     table.insert(1, "Watch", [is_watched(symbol) for symbol in symbols])
+    if visible_columns:
+        ordered = ["S.No", "Watch"] + [c for c in visible_columns if c not in {"S.No", "Watch"}]
+        table = table[[c for c in ordered if c in table.columns]]
     watch_config = dict(column_config)
     watch_config["Watch"] = st.column_config.CheckboxColumn("☆", help="Add/remove this stock from Watchlist", width="small")
     disabled = [column for column in table.columns if column != "Watch"]
     edited = st.data_editor(table, use_container_width=True, hide_index=True, height=height, column_config=watch_config, disabled=disabled, key=key)
-    for symbol, before, after in zip(symbols, table["Watch"].tolist(), edited["Watch"].tolist()):
+    for symbol, before, after in zip(symbols, [is_watched(symbol) for symbol in symbols], edited["Watch"].tolist()):
         if bool(before) != bool(after):
             if after:
                 add_stock(symbol)
@@ -302,13 +305,8 @@ with main:
                 st.session_state.stock_full_table = True
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        watchable_columns = ["S.No", "Watch"] + [c for c in saved_columns if c != "S.No"]
-        shown_for_table = shown_for_table.copy()
-        shown_for_table = shown_for_table[[c for c in watchable_columns if c in shown_for_table.columns or c == "Watch"]]
-        if "Watch" not in shown_for_table.columns:
-            shown_for_table.insert(1, "Watch", [is_watched(symbol) for symbol in shown["Symbol"].astype(str).str.strip().str.upper()])
-        render_watchable_table(shown_for_table, "stock_watch_editor", min(700, 95 + max(len(shown_for_table),1)*36), stock_column_config())
-        st.markdown(f'<div class="table-foot">Showing {len(shown_for_table):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
+        render_watchable_table(shown, "stock_watch_editor", min(700, 95 + max(len(shown),1)*36), stock_column_config(), saved_columns)
+        st.markdown(f'<div class="table-foot">Showing {len(shown):,} of {len(df):,} matches · sorted by RS</div>', unsafe_allow_html=True)
 
         fno_df = st.session_state.get("fno_result")
         st.markdown(f'<div class="section-title">F&O Results · {len(fno_df):,}</div>' if fno_df is not None else '<div class="section-title">F&O Results · —</div>', unsafe_allow_html=True)
@@ -324,7 +322,6 @@ with main:
             fno_all_columns = list(fno_display.columns)
             fno_saved_columns = st.session_state.get("fno_columns", fno_all_columns)
             fno_saved_columns = [c for c in fno_saved_columns if c in fno_all_columns] or fno_all_columns
-            fno_shown = fno_display[fno_saved_columns]
             fno_full_table = fno_df[[c for c in DISPLAY_COLS if c in fno_df.columns]].copy()
             fno_full_table.insert(0, "S.No", range(1, len(fno_full_table) + 1))
             st.markdown('<div class="table-action-row">', unsafe_allow_html=True)
@@ -339,12 +336,8 @@ with main:
                     st.session_state.fno_full_table = True
                     st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-            fno_watchable_columns = ["S.No", "Watch"] + [c for c in fno_saved_columns if c != "S.No"]
-            fno_shown = fno_shown.copy()
-            fno_shown.insert(1, "Watch", [is_watched(symbol) for symbol in fno_display["Symbol"].astype(str).str.strip().str.upper()])
-            fno_shown = fno_shown[[c for c in fno_watchable_columns if c in fno_shown.columns]]
-            render_watchable_table(fno_shown, "fno_watch_editor", min(700, 95 + max(len(fno_shown),1)*36), stock_column_config())
-            st.markdown(f'<div class="table-foot">Showing {len(fno_shown):,} of {len(fno_df):,} F&O matches · same RS order as Main Results</div>', unsafe_allow_html=True)
+            render_watchable_table(fno_display, "fno_watch_editor", min(700, 95 + max(len(fno_display),1)*36), stock_column_config(), fno_saved_columns)
+            st.markdown(f'<div class="table-foot">Showing {len(fno_display):,} of {len(fno_df):,} F&O matches · same RS order as Main Results</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="legend"><span class="dot" style="background:#35d07f"></span>RS 80–99 <span class="dot" style="background:#f3b94b"></span>RS 50–79 <span class="dot" style="background:#ff6673"></span>RS 1–49</div>', unsafe_allow_html=True)
         st.markdown('<div class="footer">RS = weighted 3M / 6M / 9M / 12M relative performance. Technical filters are optional. Minervini MA trend checks price above 50 / 150 / 200 DMA; MA rising checks can be enabled separately. Index membership and Industry are informational metadata and are not used in scan calculations.</div>', unsafe_allow_html=True)
