@@ -223,7 +223,10 @@ with right:
     if isinstance(peers, pd.DataFrame) and not peers.empty:
         peer_display = _unique_columns(peers.copy())
         first_col = peer_display.columns[0]
+        if first_col != "Company" and "Company" in peer_display.columns:
+            peer_display = peer_display.rename(columns={"Company": "Peer Company"})
         peer_display = peer_display.rename(columns={first_col: "Company"})
+        peer_display = _unique_columns(peer_display)
         st.dataframe(peer_display, use_container_width=True, hide_index=True, height=330)
     else:
         st.info("Peer comparison is not available from Screener for this company.")
