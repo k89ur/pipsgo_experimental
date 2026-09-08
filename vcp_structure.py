@@ -27,12 +27,7 @@ def clean_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def detect_swings(frame: pd.DataFrame, quality: str = "Standard") -> list[dict]:
-    """Return confirmed, meaningful alternating swing highs/lows.
-
-    A swing needs both local-extrema confirmation and a minimum price/time move.
-    Same-type points are collapsed before significance filtering, preventing small
-    alternating noise from manufacturing artificial contractions.
-    """
+    """Return confirmed, meaningful alternating swing highs/lows."""
     x = clean_ohlcv(frame)
     if x.empty:
         return []
@@ -68,8 +63,6 @@ def detect_swings(frame: pd.DataFrame, quality: str = "Standard") -> list[dict]:
         bars = p["i"] - prev["i"]
         move = abs(p["price"] - prev["price"]) / prev["price"] * 100 if prev["price"] else 0
         if bars < min_bars or move < min_pct:
-            # Ignore micro-swings. If another point of the same type appears,
-            # retain the more extreme endpoint instead of adding noise.
             if p["type"] == prev["type"]:
                 better = p["price"] >= prev["price"] if p["type"] == "H" else p["price"] <= prev["price"]
                 if better:
@@ -95,7 +88,6 @@ def build_contractions(frame: pd.DataFrame, quality: str = "Standard", lookback:
         depth = (high - low) / high * 100 if high else np.nan
         if not (1 <= depth <= 40):
             continue
-        # The recovery must retrace a meaningful part of the preceding decline.
         required_recovery = low + (high - low) * rule["recovery_pct"]
         if recovery < required_recovery:
             continue
@@ -110,7 +102,12 @@ def build_contractions(frame: pd.DataFrame, quality: str = "Standard", lookback:
 
 def choose_longest_sequence(candidates: list[dict], minimum: int = 2, maximum: int = 4,
                             first_max: float = 25., final_max: float = 5., tolerance: float = .18) -> list[dict]:
-    """Choose the longest valid 2–4 contraction sequence, allowing shared pivots."""
+    """Choose the longest valid 2–4 contraction sequence.
+
+    Contraction depth does not have to shrink monotonically. The core setup
+    permits later bases to remain within the broader first-contraction range;
+    the 25% first-contraction cap and 5% final-contraction cap remain active.
+    """
     best = []
     for end in range(len(candidates)):
         for start in range(max(0, end - maximum + 1), end + 1):
@@ -122,8 +119,8 @@ def choose_longest_sequence(candidates: list[dict], minimum: int = 2, maximum: i
             depths = [c["depth"] for c in seq]
             if depths[0] > first_max or depths[-1] > final_max:
                 continue
-            if any(depths[k + 1] > depths[k] * (1 + tolerance) for k in range(len(depths) - 1)):
-                continue
+            # Do not require artificial C1 > C2 > C3 > C4 progression.
+            # Structural recovery highs must still remain meaningful.
             if any(seq[k + 1]["recovery_high"] < seq[k]["recovery_high"] * (0.75 - tolerance) for k in range(len(seq) - 1)):
                 continue
             if len(seq) > len(best) or (len(seq) == len(best) and seq[-1]["recover_i"] > (best[-1]["recover_i"] if best else -1)):
