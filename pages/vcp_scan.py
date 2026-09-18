@@ -56,7 +56,15 @@ def visible_vcp_columns():
     saved = st.session_state.get("vcp_columns")
     if saved:
         valid = [col for col in saved if col in COLUMNS]
-        return valid or COLUMNS.copy()
+        if valid:
+            # Migration: GoCharting was added after older saved column selections.
+            if "GoCharting" in COLUMNS and "GoCharting" not in valid:
+                if "TradingView" in valid:
+                    valid.insert(valid.index("TradingView") + 1, "GoCharting")
+                else:
+                    valid.append("GoCharting")
+            return valid
+        return COLUMNS.copy()
     return COLUMNS.copy()
 
 
