@@ -129,6 +129,74 @@ def reset_stock_result_filters():
     st.session_state.stock_result_industry_filter = []
 
 
+def reset_fno_result_filters():
+    st.session_state.fno_search = ""
+    st.session_state.fno_result_index_filter = []
+    st.session_state.fno_result_industry_filter = []
+
+
+def apply_result_filters(data, search, selected_indexes, selected_industries):
+    view = data.copy()
+    if search:
+        q = search.strip()
+        view = view[
+            view["Symbol"].str.contains(q, case=False, na=False)
+            | view["Index"].str.contains(q, case=False, na=False)
+            | view["Industry"].str.contains(q, case=False, na=False)
+        ]
+    if selected_indexes:
+        import re
+        index_pattern = "|".join(re.escape(value) for value in selected_indexes)
+        view = view[view["Index"].str.contains(index_pattern, case=False, na=False)]
+    if selected_industries:
+        view = view[view["Industry"].isin(selected_industries)]
+    return view
+
+
+def result_filter_controls(data, prefix="stock"):
+    search_key = "stock_search" if prefix == "stock" else "fno_search"
+    index_key = "stock_result_index_filter" if prefix == "stock" else "fno_result_index_filter"
+    industry_key = "stock_result_industry_filter" if prefix == "stock" else "fno_result_industry_filter"
+    reset_key = "stock_result_filter_reset" if prefix == "stock" else "fno_result_filter_reset"
+    reset_callback = reset_stock_result_filters if prefix == "stock" else reset_fno_result_filters
+
+    filter_search_col, filter_index_col, filter_industry_col, filter_reset_col = st.columns([2.8, 1.45, 1.45, 0.75], gap="small")
+    with filter_search_col:
+        search = st.text_input(
+            "Search stocks",
+            placeholder="Search symbol, index or industry…",
+            label_visibility="collapsed",
+            key=search_key,
+        )
+    index_options = sorted({value.strip() for value in data["Index"].dropna().astype(str) if value.strip()})
+    industry_options = sorted({value.strip() for value in data["Industry"].dropna().astype(str) if value.strip()})
+    with filter_index_col:
+        selected_indexes = st.multiselect(
+            "Index",
+            index_options,
+            placeholder="All indexes",
+            label_visibility="collapsed",
+            key=index_key,
+        )
+    with filter_industry_col:
+        selected_industries = st.multiselect(
+            "Industry",
+            industry_options,
+            placeholder="All industries",
+            label_visibility="collapsed",
+            key=industry_key,
+        )
+    with filter_reset_col:
+        st.button(
+            "Reset",
+            use_container_width=True,
+            key=reset_key,
+            help="Clear search, Index and Industry filters",
+            on_click=reset_callback,
+        )
+    return apply_result_filters(data, search, selected_indexes, selected_industries)
+
+
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable scan filters</div></div>', unsafe_allow_html=True)
 
@@ -140,8 +208,10 @@ if st.session_state.stock_full_table:
             st.session_state.stock_full_table = False
             st.rerun()
         st.stop()
-    full_table = df[[c for c in DISPLAY_COLS if c in df.columns]].copy()
+    filtered_full = result_filter_controls(df, prefix="stock")
+    full_table = filtered_full[[c for c in DISPLAY_COLS if c in filtered_full.columns]].copy()
     full_table.insert(0, "S.No", range(1, len(full_table) + 1))
+    st.markdown(f'<div class="section-title">Stock RS Results · {len(filtered_full):,}</div>', unsafe_allow_html=True)
     top_spacer, minimize = st.columns([20, 1], gap="small")
     with minimize:
         if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="stock_full_minimize", help="Return to scanner"):
@@ -158,8 +228,10 @@ if st.session_state.fno_full_table:
             st.session_state.fno_full_table = False
             st.rerun()
         st.stop()
-    fno_full = fno_df[[c for c in DISPLAY_COLS if c in fno_df.columns]].copy()
+    filtered_fno = result_filter_controls(fno_df, prefix="fno")
+    fno_full = filtered_fno[[c for c in DISPLAY_COLS if c in filtered_fno.columns]].copy()
     fno_full.insert(0, "S.No", range(1, len(fno_full) + 1))
+    st.markdown(f'<div class="section-title">F&O Results · {len(filtered_fno):,}</div>', unsafe_allow_html=True)
     top_spacer, minimize = st.columns([20, 1], gap="small")
     with minimize:
         if st.button("", icon=":material/fullscreen_exit:", type="tertiary", width=30, key="fno_full_minimize", help="Return to scanner"):
@@ -295,28 +367,7 @@ with main:
                     st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
                     st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
-        filter_search_col, filter_index_col, filter_industry_col, filter_reset_col = st.columns([2.8, 1.45, 1.45, 0.75], gap="small")
-        with filter_search_col:
-            search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
-        index_options = sorted({value.strip() for value in df["Index"].dropna().astype(str) if value.strip()})
-        industry_options = sorted({value.strip() for value in df["Industry"].dropna().astype(str) if value.strip()})
-        with filter_index_col:
-            selected_indexes = st.multiselect("Index", index_options, placeholder="All indexes", label_visibility="collapsed", key="stock_result_index_filter")
-        with filter_industry_col:
-            selected_industries = st.multiselect("Industry", industry_options, placeholder="All industries", label_visibility="collapsed", key="stock_result_industry_filter")
-        with filter_reset_col:
-            st.button("Reset", use_container_width=True, key="stock_result_filter_reset", help="Clear search, Index and Industry filters", on_click=reset_stock_result_filters)
-
-        view = df.copy()
-        if search:
-            q = search.strip()
-            view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
-        if selected_indexes:
-            import re
-            index_pattern = "|".join(re.escape(value) for value in selected_indexes)
-            view = view[view["Index"].str.contains(index_pattern, case=False, na=False)]
-        if selected_industries:
-            view = view[view["Industry"].isin(selected_industries)]
+        view = result_filter_controls(df, prefix="stock")
         shown = view[[c for c in DISPLAY_COLS if c in view.columns]].copy()
         shown.insert(0, "S.No", range(1, len(shown) + 1))
         all_columns = list(shown.columns)
