@@ -34,6 +34,7 @@ if st.session_state.index_full_table:
     full_table = df.copy()
     full_table.insert(0, "S.No", range(1, len(full_table) + 1))
     full_table["TradingView"] = full_table["INDEX"].map(lambda x: f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
+    full_table["GoCharting"] = full_table["INDEX"].map(lambda x: f"https://gocharting.com/terminal?ticker=NSE%3A{x}")
 
     def index_style(row):
         styles = [""] * len(row)
@@ -69,7 +70,8 @@ if st.session_state.index_full_table:
             "First Date": st.column_config.DateColumn("FIRST DATE", format="DD MMM YYYY", width="medium"),
             "Latest Date": st.column_config.DateColumn("LATEST DATE", format="DD MMM YYYY", width="medium"),
             "Status": st.column_config.TextColumn("STATUS", width="small"),
-            "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
+            "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
+            "GoCharting": st.column_config.LinkColumn("GO", display_text="Open ↗", width="small"),
         },
     )
     st.stop()
@@ -186,6 +188,7 @@ with main:
             return styles
 
         show["TradingView"] = show["INDEX"].map(lambda x: f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
+        show["GoCharting"] = show["INDEX"].map(lambda x: f"https://gocharting.com/terminal?ticker=NSE%3A{x}")
 
         all_columns = list(show.columns)
         saved_columns = st.session_state.get("index_columns", all_columns)
@@ -226,7 +229,8 @@ with main:
                 "First Date": st.column_config.DateColumn("FIRST DATE", format="DD MMM YYYY", width="medium"),
                 "Latest Date": st.column_config.DateColumn("LATEST DATE", format="DD MMM YYYY", width="medium"),
                 "Status": st.column_config.TextColumn("STATUS", width="small"),
-                "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
+                "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
+                "GoCharting": st.column_config.LinkColumn("GO", display_text="Open ↗", width="small"),
             },
         )
 
