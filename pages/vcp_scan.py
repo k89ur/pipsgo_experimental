@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from nse_latest_data import eod_scan_market_open
 from snapshot_cache import install as install_persistent_snapshot
 import vcp_engine
@@ -50,6 +51,24 @@ def prepare_table(data):
         if col in table.columns:
             table[col] = table[col].map({True: "YES", False: "NO"}).fillna("—")
     return table
+
+
+def style_vcp_table(data):
+    def color_52w_high(value):
+        if pd.isna(value):
+            return ""
+        if float(value) > 0:
+            return "color: #35d07f; font-weight: 600;"
+        if float(value) < 0:
+            return "color: #ff6673; font-weight: 600;"
+        return ""
+
+    if "From 52W High %" not in data.columns:
+        return data.style
+    return data.style.map(
+        color_52w_high,
+        subset=["From 52W High %"],
+    )
 
 
 def reset_vcp_result_filters():
@@ -121,7 +140,7 @@ if st.session_state.vcp_full_table:
                 st.session_state.vcp_full_table = False
                 st.rerun()
         st.dataframe(
-            full,
+            style_vcp_table(full),
             use_container_width=True,
             hide_index=True,
             height=min(900, 95 + max(len(full), 1) * 36),
@@ -287,7 +306,7 @@ with main:
                     st.rerun()
             view = prepare_table(view_df[[c for c in selected_columns if c in view_df.columns]])
             st.dataframe(
-                view.head(50),
+                style_vcp_table(view.head(50)),
                 use_container_width=True,
                 hide_index=True,
                 height=min(650, 95 + min(len(view), 15) * 36),
