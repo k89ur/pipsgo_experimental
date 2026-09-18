@@ -99,6 +99,12 @@ def fno_column_selector(all_columns, saved_columns):
         st.rerun()
 
 
+def reset_stock_result_filters():
+    st.session_state.stock_search = ""
+    st.session_state.stock_result_index_filter = []
+    st.session_state.stock_result_industry_filter = []
+
+
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
 st.markdown('<div class="page-head"><div class="page-title">Stock RS + Technical</div><div class="page-sub">IBD-style RS ranking with configurable scan filters</div></div>', unsafe_allow_html=True)
 
@@ -275,11 +281,7 @@ with main:
         with filter_industry_col:
             selected_industries = st.multiselect("Industry", industry_options, placeholder="All industries", label_visibility="collapsed", key="stock_result_industry_filter")
         with filter_reset_col:
-            if st.button("Reset", use_container_width=True, key="stock_result_filter_reset", help="Clear search, Index and Industry filters"):
-                st.session_state.stock_search = ""
-                st.session_state.stock_result_index_filter = []
-                st.session_state.stock_result_industry_filter = []
-                st.rerun()
+            st.button("Reset", use_container_width=True, key="stock_result_filter_reset", help="Clear search, Index and Industry filters", on_click=reset_stock_result_filters)
 
         view = df.copy()
         if search:
