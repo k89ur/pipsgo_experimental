@@ -19,6 +19,7 @@ COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
     "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
     "TradingView",
+    "GoCharting",
 ]
 
 BOOL_COLUMNS = []
@@ -38,7 +39,8 @@ def column_config():
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
-        "TradingView": st.column_config.LinkColumn("CHART", display_text="Open ↗", width="small"),
+        "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
+        "GoCharting": st.column_config.LinkColumn("GO", display_text="Open ↗", width="small"),
     }
 
 
