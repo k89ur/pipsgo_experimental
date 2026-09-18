@@ -32,7 +32,6 @@ if st.session_state.index_full_table:
         st.stop()
 
     full_table = df.copy()
-    full_table.insert(0, "S.No", range(1, len(full_table) + 1))
     full_table["TradingView"] = full_table["INDEX"].map(lambda x: f"https://www.tradingview.com/chart/?symbol=NSE%3A{x}")
     full_table["GoCharting"] = full_table["INDEX"].map(lambda x: f"https://gocharting.com/terminal?ticker=NSE%3A{x}")
 
@@ -56,7 +55,6 @@ if st.session_state.index_full_table:
         hide_index=True,
         height=min(900, 95 + max(len(full_table), 1) * 36),
         column_config={
-            "S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"),
             "Rank": st.column_config.NumberColumn("#", format="%d", width="small"),
             "INDEX": st.column_config.TextColumn("INDEX", width="medium"),
             "RS 1-99": st.column_config.NumberColumn("RS", format="%d", width="small"),
