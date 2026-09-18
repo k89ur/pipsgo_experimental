@@ -43,11 +43,35 @@ def stock_column_config():
     return {"S.No": st.column_config.NumberColumn("S.NO", format="%d", width="small"), "Symbol": st.column_config.TextColumn("SYMBOL"), "Index": st.column_config.TextColumn("INDEX"), "Industry": st.column_config.TextColumn("INDUSTRY"), "LTP": st.column_config.NumberColumn("LTP", format="₹%.2f"), "RS Rating": st.column_config.NumberColumn("RS", format="%d", width="small"), "3M %": st.column_config.NumberColumn("3M", format="%.1f%%"), "6M %": st.column_config.NumberColumn("6M", format="%.1f%%"), "9M %": st.column_config.NumberColumn("9M", format="%.1f%%"), "12M %": st.column_config.NumberColumn("12M", format="%.1f%%"), "52W High": st.column_config.NumberColumn("52W HIGH", format="₹%.2f"), "From 52W High %": st.column_config.NumberColumn("52WH < %", format="%.1f%%"), "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"), "GoCharting": st.column_config.LinkColumn("GO", display_text="Open ↗", width="small")}
 
 
+def style_stock_table(data):
+    def color_52w_high(value):
+        if pd.isna(value):
+            return ""
+        if float(value) > 0:
+            return "color: #35d07f; font-weight: 600;"
+        if float(value) < 0:
+            return "color: #ff6673; font-weight: 600;"
+        return ""
+
+    if "From 52W High %" not in data.columns:
+        return data.style
+    return data.style.map(
+        color_52w_high,
+        subset=["From 52W High %"],
+    )
+
+
 def render_table(data, height, column_config, visible_columns=None):
     table = data.copy()
     if visible_columns:
         table = table[[c for c in visible_columns if c in table.columns]]
-    st.dataframe(table, use_container_width=True, hide_index=True, height=height, column_config=column_config)
+    st.dataframe(
+        style_stock_table(table),
+        use_container_width=True,
+        hide_index=True,
+        height=height,
+        column_config=column_config,
+    )
 
 
 @st.dialog("Reset scan")
