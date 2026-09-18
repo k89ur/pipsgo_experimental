@@ -179,12 +179,13 @@ def run_scan(
         ]
 
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df.Symbol.astype(str)
+    df["GoCharting"] = "https://gocharting.com/terminal?ticker=NSE%3A" + df.Symbol.astype(str)
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
         "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
-        "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView",
+        "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView", "GoCharting",
     ]
     df = df[[c for c in cols if c in df.columns]]
 
