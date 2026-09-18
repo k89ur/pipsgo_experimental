@@ -479,7 +479,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df["Industry"] = pd.Series(dtype=str)
         df["Index"] = pd.Series(dtype=str)
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
-    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "50 DMA Rising", "150 DMA Rising", "200 DMA Rising", "History Days", "TradingView"]
+    df["GoCharting"] = "https://gocharting.com/terminal?ticker=NSE%3A" + df["Symbol"].astype(str)
+    columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "50 DMA Rising", "150 DMA Rising", "200 DMA Rising", "History Days", "TradingView", "GoCharting"]
     df = df[[c for c in columns if c in df.columns]]
     stats = {
         "universe": total,
