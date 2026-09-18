@@ -52,6 +52,12 @@ def prepare_table(data):
     return table
 
 
+def reset_vcp_result_filters():
+    st.session_state.vcp_result_search = ""
+    st.session_state.vcp_result_index_filter = []
+    st.session_state.vcp_result_industry_filter = []
+
+
 def visible_vcp_columns():
     saved = st.session_state.get("vcp_columns")
     if saved:
@@ -215,6 +221,58 @@ with main:
         if df.empty:
             st.info("No stocks matched the current VCP settings.")
         else:
+            filter_search_col, filter_index_col, filter_industry_col, filter_reset_col = st.columns([2.8, 1.45, 1.45, 0.75], gap="small")
+            with filter_search_col:
+                search = st.text_input(
+                    "Search VCP results",
+                    placeholder="Search symbol, index or industry…",
+                    label_visibility="collapsed",
+                    key="vcp_result_search",
+                )
+
+            index_options = sorted({value.strip() for value in df["Index"].dropna().astype(str) if value.strip()})
+            industry_options = sorted({value.strip() for value in df["Industry"].dropna().astype(str) if value.strip()})
+
+            with filter_index_col:
+                selected_indexes = st.multiselect(
+                    "Index",
+                    index_options,
+                    placeholder="All indexes",
+                    label_visibility="collapsed",
+                    key="vcp_result_index_filter",
+                )
+            with filter_industry_col:
+                selected_industries = st.multiselect(
+                    "Industry",
+                    industry_options,
+                    placeholder="All industries",
+                    label_visibility="collapsed",
+                    key="vcp_result_industry_filter",
+                )
+            with filter_reset_col:
+                st.button(
+                    "Reset",
+                    use_container_width=True,
+                    key="vcp_result_filter_reset",
+                    help="Clear search, Index and Industry filters",
+                    on_click=reset_vcp_result_filters,
+                )
+
+            view_df = df.copy()
+            if search:
+                q = search.strip()
+                view_df = view_df[
+                    view_df["Symbol"].str.contains(q, case=False, na=False)
+                    | view_df["Index"].str.contains(q, case=False, na=False)
+                    | view_df["Industry"].str.contains(q, case=False, na=False)
+                ]
+            if selected_indexes:
+                import re
+                index_pattern = "|".join(re.escape(value) for value in selected_indexes)
+                view_df = view_df[view_df["Index"].str.contains(index_pattern, case=False, na=False)]
+            if selected_industries:
+                view_df = view_df[view_df["Industry"].isin(selected_industries)]
+
             selected_columns = visible_vcp_columns()
             spacer, tool1, tool2, tool3 = st.columns([18, 0.45, 0.45, 0.45], gap="small")
             with tool1:
@@ -227,7 +285,7 @@ with main:
                 if st.button("", icon=":material/fullscreen:", type="tertiary", width=30, key="vcp_full", help="Full screen view"):
                     st.session_state.vcp_full_table = True
                     st.rerun()
-            view = prepare_table(df[[c for c in selected_columns if c in df.columns]])
+            view = prepare_table(view_df[[c for c in selected_columns if c in view_df.columns]])
             st.dataframe(
                 view.head(50),
                 use_container_width=True,
