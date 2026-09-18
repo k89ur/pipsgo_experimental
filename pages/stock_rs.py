@@ -275,6 +275,12 @@ with main:
         all_columns = list(shown.columns)
         saved_columns = st.session_state.get("stock_columns", all_columns)
         saved_columns = [c for c in saved_columns if c in all_columns] or all_columns
+        # Migration: GoCharting was added after older saved column selections.
+        if "GoCharting" in all_columns and "GoCharting" not in saved_columns:
+            if "TradingView" in saved_columns:
+                saved_columns.insert(saved_columns.index("TradingView") + 1, "GoCharting")
+            else:
+                saved_columns.append("GoCharting")
         shown_for_table = shown[saved_columns]
         full_table = df[[c for c in DISPLAY_COLS if c in df.columns]].copy()
         full_table.insert(0, "S.No", range(1, len(full_table) + 1))
@@ -307,6 +313,12 @@ with main:
             fno_all_columns = list(fno_display.columns)
             fno_saved_columns = st.session_state.get("fno_columns", fno_all_columns)
             fno_saved_columns = [c for c in fno_saved_columns if c in fno_all_columns] or fno_all_columns
+            # Migration: GoCharting was added after older saved F&O column selections.
+            if "GoCharting" in fno_all_columns and "GoCharting" not in fno_saved_columns:
+                if "TradingView" in fno_saved_columns:
+                    fno_saved_columns.insert(fno_saved_columns.index("TradingView") + 1, "GoCharting")
+                else:
+                    fno_saved_columns.append("GoCharting")
             fno_full_table = fno_df[[c for c in DISPLAY_COLS if c in fno_df.columns]].copy()
             fno_full_table.insert(0, "S.No", range(1, len(fno_full_table) + 1))
             st.markdown('<div class="table-action-row">', unsafe_allow_html=True)
