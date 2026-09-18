@@ -265,11 +265,32 @@ with main:
                     st.dataframe(source_df, use_container_width=True, hide_index=True, column_config={"Yahoo 2Y Close": st.column_config.NumberColumn(format="₹%.2f"), "Yahoo 10D Close": st.column_config.NumberColumn(format="₹%.2f"), "NSE Close": st.column_config.NumberColumn(format="₹%.2f")})
                     st.caption("Diagnostic only — this comparison does not change the scan, snapshot, RS ranking or technical filters.")
         st.markdown('<div class="section-title">Results</div>', unsafe_allow_html=True)
-        search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
+        filter_search_col, filter_index_col, filter_industry_col, filter_reset_col = st.columns([2.8, 1.45, 1.45, 0.75], gap="small")
+        with filter_search_col:
+            search = st.text_input("Search stocks", placeholder="Search symbol, index or industry…", label_visibility="collapsed", key="stock_search")
+        index_options = sorted({value.strip() for value in df["Index"].dropna().astype(str) if value.strip()})
+        industry_options = sorted({value.strip() for value in df["Industry"].dropna().astype(str) if value.strip()})
+        with filter_index_col:
+            selected_indexes = st.multiselect("Index", index_options, placeholder="All indexes", label_visibility="collapsed", key="stock_result_index_filter")
+        with filter_industry_col:
+            selected_industries = st.multiselect("Industry", industry_options, placeholder="All industries", label_visibility="collapsed", key="stock_result_industry_filter")
+        with filter_reset_col:
+            if st.button("Reset", use_container_width=True, key="stock_result_filter_reset", help="Clear search, Index and Industry filters"):
+                st.session_state.stock_search = ""
+                st.session_state.stock_result_index_filter = []
+                st.session_state.stock_result_industry_filter = []
+                st.rerun()
+
         view = df.copy()
         if search:
             q = search.strip()
             view = view[view["Symbol"].str.contains(q, case=False, na=False) | view["Index"].str.contains(q, case=False, na=False) | view["Industry"].str.contains(q, case=False, na=False)]
+        if selected_indexes:
+            import re
+            index_pattern = "|".join(re.escape(value) for value in selected_indexes)
+            view = view[view["Index"].str.contains(index_pattern, case=False, na=False)]
+        if selected_industries:
+            view = view[view["Industry"].isin(selected_industries)]
         shown = view[[c for c in DISPLAY_COLS if c in view.columns]].copy()
         shown.insert(0, "S.No", range(1, len(shown) + 1))
         all_columns = list(shown.columns)
