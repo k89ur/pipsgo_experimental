@@ -85,6 +85,7 @@ def install(engine_module) -> None:
         batch_size=100,
         snapshot_mode="eod",
         force_refresh=False,
+        bypass_memory_cache=False,
         progress_callback=None,
     ):
         if force_refresh:
@@ -96,6 +97,7 @@ def install(engine_module) -> None:
             batch_size=batch_size,
             snapshot_mode=snapshot_mode,
             force_refresh=force_refresh,
+            bypass_memory_cache=bypass_memory_cache,
             progress_callback=progress_callback,
         )
 
