@@ -182,6 +182,8 @@ def _download_raw_recent(symbols: list[str], progress_callback=None) -> dict[str
                     continue
         except Exception:
             continue
+        if progress_callback:
+            progress_callback(min(start + len(group), total), total, f"Recent reference data · {min(start + len(group), total):,}/{total:,}")
     return result
 
 
