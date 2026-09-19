@@ -19,4 +19,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "numpy>=1.26" "pandas>=2.0" "requests>=2.31" "yfinance>=0.2.40" "streamlit>=1.40"
       - name: Run production-path benchmark
+        env:
+          BENCHMARK_SYMBOLS: "600"
         run: python tests/benchmark_production_snapshot.py
