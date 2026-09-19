@@ -331,9 +331,14 @@ def _metrics(symbol: str, x: pd.DataFrame, rising_days: int, calculate_ma_rising
         if len(high) < 253:
             return {}
         previous_52w_high = float(high.iloc[-253:-1].max())
-        today_high = float(high.iloc[-1])
         high_52w = previous_52w_high
-        from_high = (today_high - previous_52w_high) / previous_52w_high * 100.0 if previous_52w_high else np.nan
+        # EOD scans measure distance from the prior 52W high using the
+        # official/current day's closing price, not the day's high.
+        if str(snapshot_mode).lower().strip() == "eod":
+            today_value = ltp
+        else:
+            today_value = float(high.iloc[-1])
+        from_high = (today_value - previous_52w_high) / previous_52w_high * 100.0 if previous_52w_high else np.nan
     else:
         high_52w = float(close.tail(252).max())
         from_high = (high_52w - ltp) / high_52w * 100.0 if high_52w else np.nan
