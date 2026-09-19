@@ -364,18 +364,6 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(closes):,} closing prices · {nse_date}")
 
     total_symbols = len(data)
-    recent_started = time.perf_counter()
-    raw_recent = _download_raw_recent(
-        list(data.keys()),
-        progress_callback=(
-            (lambda done, total, label: progress_callback(done, total, f"NSE stage · {label}"))
-            if progress_callback else None
-        ),
-    )
-    performance["Yahoo 10D reference"] = time.perf_counter() - recent_started
-    performance["Yahoo 10D reference batches"] = (total_symbols + 99) // 100
-    performance["Yahoo 10D symbols requested"] = total_symbols
-    performance["Yahoo 10D symbols received"] = len(raw_recent)
     target = pd.Timestamp(nse_date)
     apply_started = time.perf_counter()
     updated = 0
@@ -384,18 +372,13 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         nse_close = closes.get(symbol)
         if nse_close is None or frame is None or frame.empty:
             continue
-        raw = raw_recent.get(symbol)
         adjusted_factor = None
-        if raw is not None and not raw.empty:
-            common = frame.index.intersection(raw.index)
-            common = common[common <= target]
-            if len(common):
-                ref_date = common[-1]
-                adjusted_close = pd.to_numeric(frame.loc[ref_date, "Close"], errors="coerce")
-                raw_close = pd.to_numeric(raw.loc[ref_date, "Close"], errors="coerce")
-                if pd.notna(adjusted_close) and pd.notna(raw_close) and float(raw_close) > 0:
-                    adjusted_factor = float(adjusted_close) / float(raw_close)
-                    factor_count += 1
+        if "Adjustment Factor" in frame.columns:
+            factors = pd.to_numeric(frame["Adjustment Factor"], errors="coerce")
+            valid_dates = factors.index[factors.notna() & (factors > 0) & (factors.index <= target)]
+            if len(valid_dates):
+                adjusted_factor = float(factors.loc[valid_dates[-1]])
+                factor_count += 1
         scaled_close = float(nse_close) * adjusted_factor if adjusted_factor is not None else float(nse_close)
         x = frame.copy()
         if target in x.index:
@@ -419,6 +402,10 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
     performance["Apply NSE closes"] = time.perf_counter() - apply_started
+    performance["Yahoo 10D reference"] = 0.0
+    performance["Yahoo 10D reference batches"] = 0
+    performance["Yahoo 10D symbols requested"] = 0
+    performance["Yahoo 10D symbols received"] = 0
     diagnostics_started = time.perf_counter()
     _refresh_snapshot_diagnostics(snapshot)
     performance["Snapshot diagnostics refresh"] = time.perf_counter() - diagnostics_started
