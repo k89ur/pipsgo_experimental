@@ -42,7 +42,7 @@ def install(engine_module) -> None:
         symbols = list(symbols)
         if not symbols:
             return {}
-        cache_day = datetime.now(IST).date().isoformat()
+        cache_day = f"{datetime.now(IST).date().isoformat()}:raw-adjusted-v1"
         try:
             return _cached_stock_batch(
                 tuple(symbols),
