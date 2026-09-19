@@ -450,6 +450,9 @@ with main:
                 cache_rows = []
                 for label in [
                     "Yahoo 2Y batches",
+                    "Yahoo 2Y cache lookups",
+                    "Yahoo 2Y cache hits",
+                    "Yahoo 2Y cache misses",
                     "Yahoo cache lookups",
                     "Yahoo cache hits",
                     "Yahoo cache misses",
@@ -499,7 +502,7 @@ with main:
                 if timing_rows:
                     st.dataframe(pd.DataFrame(timing_rows), use_container_width=True, hide_index=True)
                 extra_rows = []
-                for label in ["Yahoo 2Y batches", "Yahoo cache lookups", "Yahoo cache hits", "Yahoo cache misses", "Yahoo download calls", "Yahoo symbols processed", "Yahoo 10D recovery batches", "Yahoo 10D recovery symbols requested", "Yahoo 10D recovery symbols received", "Yahoo 10D reference batches", "Yahoo 10D symbols requested", "Yahoo 10D symbols received", "Stale symbols recovered", "NSE closes applied", "NSE adjustment factors"]:
+                for label in ["Yahoo 2Y batches", "Yahoo 2Y cache lookups", "Yahoo 2Y cache hits", "Yahoo 2Y cache misses", "Yahoo 10D cache lookups", "Yahoo 10D cache hits", "Yahoo 10D cache misses", "Yahoo cache lookups", "Yahoo cache hits", "Yahoo cache misses", "Yahoo download calls", "Yahoo symbols processed", "Yahoo 10D recovery batches", "Yahoo 10D recovery symbols requested", "Yahoo 10D recovery symbols received", "Yahoo 10D reference batches", "Yahoo 10D symbols requested", "Yahoo 10D symbols received", "Stale symbols recovered", "NSE closes applied", "NSE adjustment factors"]:
                     value = performance_timings.get(label)
                     if value is not None:
                         extra_rows.append({"Metric": label, "Value": value})
