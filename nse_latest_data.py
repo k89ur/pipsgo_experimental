@@ -442,11 +442,19 @@ def install_nse_latest_close(engine_module) -> None:
 
     def cached_download_batch(symbols, retries=3, threads=True, period="2y"):
         cache_day = f"{datetime.now(IST).date().isoformat()}:raw-adjusted-v1"
+        before_calls = int(engine_module._DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
         try:
-            return _cached_engine_batch(
+            result = _cached_engine_batch(
                 tuple(symbols), period, threads, cache_day, original_download_batch
             )
+            after_calls = int(engine_module._DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
+            if after_calls == before_calls:
+                engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache hits"] += 1
+            else:
+                engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache misses"] += 1
+            return result
         except RuntimeError:
+            engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache misses"] += 1
             return original_download_batch(symbols, retries=retries, threads=threads, period=period)
 
     def wrapped_download_universe(*args, **kwargs):
