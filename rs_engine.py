@@ -27,6 +27,7 @@ _DOWNLOAD_DIAGNOSTICS: dict[str, float | int] = {
     "Yahoo symbols processed": 0,
     "Yahoo cache hits": 0,
     "Yahoo cache misses": 0,
+        "Yahoo batch timings": [],
 }
 
 
@@ -284,7 +285,15 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         batch = symbols[start:start + batch_size]
         if progress_callback:
             progress_callback(start, total, f"Downloading {mode.upper()} data · batch {batch_no}/{batch_count}")
+        batch_started = time.perf_counter()
         batch_data = _download_batch(batch)
+        batch_elapsed = time.perf_counter() - batch_started
+        _DOWNLOAD_DIAGNOSTICS.setdefault("Yahoo batch timings", []).append({
+            "batch": batch_no,
+            "symbols": len(batch),
+            "seconds": round(batch_elapsed, 3),
+            "received": len(batch_data),
+        })
         missing = [symbol for symbol in batch if symbol not in batch_data]
         if missing:
             batch_data.update(_download_missing(missing))
@@ -304,6 +313,11 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache lookups", 0))
     performance_timings["Yahoo cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache hits", 0))
     performance_timings["Yahoo cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache misses", 0))
+    batch_timings = list(_DOWNLOAD_DIAGNOSTICS.get("Yahoo batch timings", []))
+    performance_timings["Yahoo batch count"] = len(batch_timings)
+    performance_timings["Yahoo batch avg seconds"] = (sum(x["seconds"] for x in batch_timings) / len(batch_timings)) if batch_timings else 0.0
+    performance_timings["Yahoo batch max seconds"] = max((x["seconds"] for x in batch_timings), default=0.0)
+    performance_timings["Yahoo batch min seconds"] = min((x["seconds"] for x in batch_timings), default=0.0)
 
     # Bulk 2-year downloads can be complete but one trading day behind.
     # Recover the latest bars using a short recent window, then merge them into
