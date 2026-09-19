@@ -1,10 +1,11 @@
-"""Isolated regression checks for Yahoo adjusted-price reconstruction.
+"""Numerical regression checks for the Yahoo adjusted-price pipeline.
 
-This module intentionally does not modify production scanner code.
-Run with:
+The production scanner now downloads raw OHLC + Adj Close, reconstructs the
+adjusted OHLC series, and then applies the NSE EOD close patch. This test keeps
+the previous yfinance auto_adjust=True series as the numerical reference.
+
+Run:
     python -m pytest tests/test_adjusted_data_regression.py -q
-or:
-    python tests/test_adjusted_data_regression.py
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+import rs_engine
+
 
 FIXTURES = (
     "RELIANCE",
@@ -24,6 +27,25 @@ FIXTURES = (
     "TCS",
     "WIPRO",
     "QMSMEDI",
+)
+
+# A small deterministic universe is enough to prove that score/rating/filter
+# decisions survive the price-pipeline change without downloading the entire
+# NSE universe inside every CI run.
+MINI_UNIVERSE = ("RELIANCE", "ITC", "TCS", "WIPRO", "QMSMEDI")
+
+METRIC_COLUMNS = (
+    "LTP",
+    "3M %",
+    "6M %",
+    "9M %",
+    "12M %",
+    "50 DMA",
+    "150 DMA",
+    "200 DMA",
+    "52W High",
+    "From 52W High %",
+    "History Days",
 )
 
 
@@ -82,67 +104,61 @@ def _download(symbols: Iterable[str], auto_adjust: bool) -> dict[str, pd.DataFra
 
 
 def _reconstruct(raw_frame: pd.DataFrame) -> pd.DataFrame:
-    x = raw_frame.copy()
     required = {"Open", "High", "Low", "Close", "Adj Close"}
-    missing = required - set(x.columns)
+    missing = required - set(raw_frame.columns)
     if missing:
         raise AssertionError(f"Missing columns: {sorted(missing)}")
 
+    x = raw_frame.copy()
     raw_close = pd.to_numeric(x["Close"], errors="coerce")
     adj_close = pd.to_numeric(x["Adj Close"], errors="coerce")
-    factor = adj_close / raw_close
-    if factor.replace([np.inf, -np.inf], np.nan).dropna().empty:
+    factor = (adj_close / raw_close).replace([np.inf, -np.inf], np.nan)
+    valid = factor.notna() & raw_close.gt(0)
+
+    if not valid.any():
         raise AssertionError("No valid adjustment factor")
 
+    x = x.loc[valid].copy()
+    factor = factor.loc[valid]
     for col in ("Open", "High", "Low", "Close"):
-        values = pd.to_numeric(x[col], errors="coerce")
-        x[col] = values * factor
+        x[col] = pd.to_numeric(x[col], errors="coerce") * factor
 
-    return x
+    x["Adjustment Factor"] = factor
+    return _clean(x.drop(columns=["Adj Close"], errors="ignore"))
 
 
 def _download_raw_adjusted(symbols: Iterable[str]) -> dict[str, pd.DataFrame]:
-    symbols = list(symbols)
-    raw = yf.download(
-        tickers=[f"{s}.NS" for s in symbols],
-        period="2y",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        group_by="ticker",
-        threads=True,
+    return _download(symbols, auto_adjust=False)
+
+
+def _production_metrics(symbol: str, frame: pd.DataFrame) -> dict:
+    """Use the exact production metric function, not a copied implementation."""
+    return rs_engine._metrics(
+        symbol,
+        frame,
+        rising_days=20,
+        calculate_ma_rising=True,
+        snapshot_mode="eod",
     )
-    return {s: _extract(raw, s) for s in symbols}
 
 
-def _metrics(close: pd.Series, high: pd.Series) -> dict[str, float]:
-    close = pd.to_numeric(close, errors="coerce").dropna().astype(float)
-    high = pd.to_numeric(high, errors="coerce").dropna().astype(float)
-    if len(close) < 200 or len(high) < 253:
-        return {}
-
-    def ret(days: int) -> float:
-        if len(close) <= days:
-            return math.nan
-        return (float(close.iloc[-1]) / float(close.iloc[-days - 1]) - 1.0) * 100.0
-
-    d50 = close.rolling(50).mean()
-    d150 = close.rolling(150).mean()
-    d200 = close.rolling(200).mean()
-    previous_high = float(high.iloc[-253:-1].max())
-    ltp = float(close.iloc[-1])
-
-    return {
-        "3M %": ret(63),
-        "6M %": ret(126),
-        "9M %": ret(189),
-        "12M %": ret(252),
-        "50 DMA": float(d50.iloc[-1]),
-        "150 DMA": float(d150.iloc[-1]),
-        "200 DMA": float(d200.iloc[-1]),
-        "52W High": previous_high,
-        "From 52W High %": (ltp - previous_high) / previous_high * 100.0,
-    }
+def _compare_numeric_dicts(symbol: str, old: dict, new: dict) -> None:
+    assert set(old) == set(new), f"{symbol}: metric keys differ"
+    for key in old:
+        a = old[key]
+        b = new[key]
+        if isinstance(a, (bool, np.bool_)) or isinstance(b, (bool, np.bool_)):
+            assert bool(a) == bool(b), f"{symbol}: boolean mismatch {key}: {a} vs {b}"
+            continue
+        if isinstance(a, (int, np.integer)) or isinstance(b, (int, np.integer)):
+            assert int(a) == int(b), f"{symbol}: integer mismatch {key}: {a} vs {b}"
+            continue
+        assert math.isclose(
+            float(a),
+            float(b),
+            rel_tol=1e-8,
+            abs_tol=1e-8,
+        ), f"{symbol}: metric mismatch {key}: {a} vs {b}"
 
 
 def compare_fixture(symbol: str, old: pd.DataFrame, reconstructed: pd.DataFrame) -> Comparison:
@@ -175,32 +191,112 @@ def compare_fixture(symbol: str, old: pd.DataFrame, reconstructed: pd.DataFrame)
     )
 
 
-def run_regression(symbols: Iterable[str] = FIXTURES) -> list[Comparison]:
-    symbols = tuple(dict.fromkeys(symbols))
+def _score_and_filter(
+    frames: dict[str, pd.DataFrame],
+    *,
+    min_rs: int = 80,
+    near_high_pct: float = 5,
+    min_price: float = 100,
+    use_ma_rising: bool = True,
+    use_minervini: bool = True,
+) -> pd.DataFrame:
+    rows = []
+    for symbol, frame in frames.items():
+        row = _production_metrics(symbol, frame)
+        if row:
+            rows.append(row)
+
+    df = pd.DataFrame(rows)
+    assert not df.empty, "Mini-universe produced no usable metrics"
+    ret_cols = ["3M %", "6M %", "9M %", "12M %"]
+    df = df.dropna(subset=ret_cols).copy()
+    df["Raw RS Score"] = (
+        df["3M %"] * 0.40
+        + df["6M %"] * 0.20
+        + df["9M %"] * 0.20
+        + df["12M %"] * 0.20
+    )
+    df["RS Rating"] = rs_engine._percentile_rating(df["Raw RS Score"])
+
+    df = df[df["LTP"] >= min_price].copy()
+    df = df[df["From 52W High %"] >= -near_high_pct].copy()
+    df = df[df["RS Rating"] >= min_rs].copy()
+
+    if use_minervini:
+        df = df[
+            (df["LTP"] > df["50 DMA"])
+            & (df["LTP"] > df["150 DMA"])
+            & (df["LTP"] > df["200 DMA"])
+        ].copy()
+
+    if use_ma_rising:
+        df = df[
+            df["50 DMA Rising"]
+            & df["150 DMA Rising"]
+            & df["200 DMA Rising"]
+        ].copy()
+
+    return df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
+
+
+def test_price_metrics_and_ohlc_match_reference() -> None:
+    symbols = FIXTURES
     old = _download(symbols, auto_adjust=True)
     raw = _download_raw_adjusted(symbols)
 
-    comparisons: list[Comparison] = []
     for symbol in symbols:
         reconstructed = _reconstruct(raw[symbol])
-        comparisons.append(compare_fixture(symbol, old[symbol], reconstructed))
+        comparison = compare_fixture(symbol, old[symbol], reconstructed)
+        assert comparison.status == "PASS", comparison
 
-        old_metrics = _metrics(old[symbol]["Close"], old[symbol]["High"])
-        new_metrics = _metrics(reconstructed["Close"], reconstructed["High"])
-        for key in old_metrics:
-            a = old_metrics[key]
-            b = new_metrics.get(key, math.nan)
-            if not math.isclose(a, b, rel_tol=1e-8, abs_tol=1e-8):
-                raise AssertionError(
-                    f"{symbol}: metric mismatch {key}: old={a}, new={b}"
-                )
+        old_metrics = _production_metrics(symbol, old[symbol])
+        new_metrics = _production_metrics(symbol, reconstructed[symbol])
+        _compare_numeric_dicts(symbol, old_metrics, new_metrics)
 
-    return comparisons
 
+def test_rs_scores_ratings_and_filter_decisions_match() -> None:
+    symbols = MINI_UNIVERSE
+    old = _download(symbols, auto_adjust=True)
+    raw = _download_raw_adjusted(symbols)
+    reconstructed = {symbol: _reconstruct(raw[symbol]) for symbol in symbols}
+
+    old_df = _score_and_filter(old)
+    new_df = _score_and_filter(reconstructed)
+
+    assert old_df["Symbol"].tolist() == new_df["Symbol"].tolist()
+
+    for column in ("Raw RS Score", "RS Rating"):
+        assert old_df[column].tolist() == new_df[column].tolist(), (
+            f"{column} changed: "
+            f"old={old_df[column].tolist()} new={new_df[column].tolist()}"
+        )
+
+    old_metrics = old_df.set_index("Symbol")
+    new_metrics = new_df.set_index("Symbol")
+    for symbol in old_metrics.index:
+        for column in ("LTP", "3M %", "6M %", "9M %", "12M %", "50 DMA", "150 DMA", "200 DMA", "52W High", "From 52W High %"):
+            assert math.isclose(
+                float(old_metrics.loc[symbol, column]),
+                float(new_metrics.loc[symbol, column]),
+                rel_tol=1e-8,
+                abs_tol=1e-8,
+            )
+
+
+def test_history_boundary_matches_production_rule() -> None:
+    for length in (251, 252):
+        close = pd.Series(np.arange(1, length + 1, dtype=float))
+        high = close.copy()
+        frame = pd.DataFrame({"Close": close, "High": high})
+        assert rs_engine._metrics("TEST", frame, 20) == {}
+
+    close = pd.Series(np.arange(1, 254, dtype=float))
+    high = close.copy()
+    frame = pd.DataFrame({"Close": close, "High": high})
+    assert rs_engine._metrics("TEST", frame, 20)
 
 
 def test_eod_nse_close_adjustment_math() -> None:
-    """Verify the NSE raw close is scaled by the Yahoo adjustment factor."""
     index = pd.date_range("2026-09-14", periods=3, freq="D")
     raw = pd.DataFrame(
         {
@@ -215,49 +311,83 @@ def test_eod_nse_close_adjustment_math() -> None:
     factor = raw["Adj Close"] / raw["Close"]
     nse_close = 105.0
     patched = nse_close * float(factor.iloc[-1])
-
     expected = 105.0 * (101.92 / 104.0)
+
     assert math.isclose(patched, expected, rel_tol=1e-12, abs_tol=1e-12)
     assert math.isclose(patched, 102.9, rel_tol=1e-12, abs_tol=1e-12)
 
 
-def test_eod_patch_without_adjustment_factor_does_not_fabricate_factor() -> None:
-    """Invalid Yahoo reference data must not silently become factor=1."""
+def test_invalid_adjustment_factor_does_not_fabricate_factor_one() -> None:
     raw_close = pd.Series([100.0, 0.0, np.nan])
     adj_close = pd.Series([98.0, 0.0, 101.0])
-    factor = adj_close / raw_close
-    valid = factor.replace([np.inf, -np.inf], np.nan).dropna()
+    factor = (adj_close / raw_close).replace([np.inf, -np.inf], np.nan)
+    valid = factor.dropna()
 
     assert len(valid) == 1
     assert math.isclose(float(valid.iloc[0]), 0.98, rel_tol=1e-12, abs_tol=1e-12)
 
 
-def test_history_boundary_matches_production_rule() -> None:
-    """Production requires more than 252 valid closes."""
-    for length in (251, 252):
-        close = pd.Series(np.arange(1, length + 1, dtype=float))
-        high = close.copy()
-        assert _metrics(close, high) == {}
+def test_stale_recovery_merge_preserves_long_history_and_latest_bar() -> None:
+    dates = pd.date_range("2026-01-01", periods=260, freq="D")
+    old = pd.DataFrame(
+        {
+            "Close": np.arange(100.0, 360.0),
+            "High": np.arange(101.0, 361.0),
+        },
+        index=dates,
+    )
+    recent_dates = pd.date_range("2026-09-15", periods=10, freq="D")
+    recent = pd.DataFrame(
+        {
+            "Close": np.arange(350.0, 360.0),
+            "High": np.arange(351.0, 361.0),
+        },
+        index=recent_dates,
+    )
 
-    close = pd.Series(np.arange(1, 254, dtype=float))
-    high = close.copy()
-    assert _metrics(close, high)
+    merged = rs_engine._merge_history(old, recent)
+
+    assert merged.index.is_monotonic_increasing
+    assert not merged.index.duplicated().any()
+    assert merged.index[-1] == recent.index[-1]
+    assert float(merged.iloc[-1]["Close"]) == float(recent.iloc[-1]["Close"])
+    assert len(merged) >= len(old)
+
+
+def test_reconstruction_rejects_missing_adjusted_close() -> None:
+    frame = pd.DataFrame(
+        {
+            "Open": [10.0, 11.0],
+            "High": [11.0, 12.0],
+            "Low": [9.0, 10.0],
+            "Close": [10.0, 11.0],
+        }
+    )
+    with np.testing.assert_raises(AssertionError):
+        _reconstruct(frame)
 
 
 def main() -> int:
-    print("=" * 64)
-    print("PIPSGOX ADJUSTED-DATA REGRESSION — BASELINE")
-    print("=" * 64)
-    results = run_regression()
-    for item in results:
+    print("=" * 72)
+    print("PIPSGOX ADJUSTED-DATA + RS NUMERICAL REGRESSION")
+    print("=" * 72)
+
+    results = []
+    old = _download(FIXTURES, auto_adjust=True)
+    raw = _download_raw_adjusted(FIXTURES)
+
+    for symbol in FIXTURES:
+        reconstructed = _reconstruct(raw[symbol])
+        comparison = compare_fixture(symbol, old[symbol], reconstructed[symbol])
+        results.append(comparison)
         print(
-            f"{item.symbol:10s} {item.status:4s} "
-            f"rows old/new={item.rows_old}/{item.rows_new} "
-            f"max_abs={item.max_abs:.12g} max_rel={item.max_rel:.12g}"
+            f"{symbol:10s} {comparison.status:4s} "
+            f"rows old/new={comparison.rows_old}/{comparison.rows_new} "
+            f"max_abs={comparison.max_abs:.12g} max_rel={comparison.max_rel:.12g}"
         )
 
     failed = [item for item in results if item.status != "PASS"]
-    print("-" * 64)
+    print("-" * 72)
     print("OVERALL:", "FAIL" if failed else "PASS")
     return 1 if failed else 0
 
