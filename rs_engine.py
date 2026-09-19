@@ -247,14 +247,14 @@ def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
     }
 
 
-def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict:
+def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, bypass_memory_cache: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None) -> dict:
     """Download one market-data snapshot per mode and IST calendar day."""
     mode = str(snapshot_mode).lower().strip()
     if mode not in {"intraday", "eod"}:
         mode = "eod"
     snapshot_day = datetime.now(IST).date().isoformat()
     key = (mode, snapshot_day, tuple(symbols), batch_size)
-    if not force_refresh and key in _STOCK_DATA_CACHE:
+    if not force_refresh and not bypass_memory_cache and key in _STOCK_DATA_CACHE:
         cached = _STOCK_DATA_CACHE[key]
         if progress_callback:
             progress_callback(len(symbols), len(symbols), f"{mode.upper()} snapshot ready (cached)")
@@ -266,8 +266,12 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Adjusted reconstruction time": 0.0,
         "Yahoo download calls": 0,
         "Yahoo symbols processed": 0,
+        "Yahoo cache lookups": 0,
         "Yahoo cache hits": 0,
         "Yahoo cache misses": 0,
+        "Yahoo 10D recovery batches": 0,
+        "Yahoo 10D recovery symbols requested": 0,
+        "Yahoo 10D recovery symbols received": 0,
     })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
@@ -313,7 +317,10 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         recovery_batch_size = 50
         for start in range(0, total_stale, recovery_batch_size):
             group = stale_symbols[start:start + recovery_batch_size]
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0)) + 1
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0)) + len(group)
             recovered = _download_batch(group, retries=2, threads=True, period="10d")
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0)) + len(recovered)
             for symbol, recent in recovered.items():
                 if _latest_date(recent) == target_date:
                     data[symbol] = _merge_history(data.get(symbol), recent)
@@ -324,6 +331,9 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
                 time.sleep(0.25)
     performance_timings["Stale-data recovery"] = time.perf_counter() - recovery_started
     performance_timings["Stale symbols recovered"] = len(stale_symbols)
+    performance_timings["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0))
+    performance_timings["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0))
+    performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
 
     usable = [
         symbol
@@ -374,6 +384,12 @@ def clear_stock_data_cache() -> None:
         "Adjusted reconstruction time": 0.0,
         "Yahoo download calls": 0,
         "Yahoo symbols processed": 0,
+        "Yahoo cache lookups": 0,
+        "Yahoo cache hits": 0,
+        "Yahoo cache misses": 0,
+        "Yahoo 10D recovery batches": 0,
+        "Yahoo 10D recovery symbols requested": 0,
+        "Yahoo 10D recovery symbols received": 0,
     })
 
 
@@ -503,7 +519,7 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
     return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
-def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
+def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, bypass_memory_cache: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
     scan_started = time.perf_counter()
     timings = {}
     universe_started = time.perf_counter()
@@ -511,7 +527,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     timings["NSE universe"] = time.perf_counter() - universe_started
     total = len(symbols)
     snapshot_started = time.perf_counter()
-    snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback)
+    snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, bypass_memory_cache=bypass_memory_cache, progress_callback=progress_callback)
     timings["Market data snapshot"] = time.perf_counter() - snapshot_started
     timings.update(snapshot.get("performance_timings", {}))
     data = snapshot["data"]
