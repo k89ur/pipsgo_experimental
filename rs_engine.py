@@ -259,6 +259,12 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         return cached
 
     total = len(symbols)
+    _DOWNLOAD_DIAGNOSTICS.update({
+        "Yahoo request time": 0.0,
+        "Adjusted reconstruction time": 0.0,
+        "Yahoo download calls": 0,
+        "Yahoo symbols processed": 0,
+    })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
     failed: list[str] = []
