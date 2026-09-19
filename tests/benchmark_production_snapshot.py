@@ -8,6 +8,7 @@ NSE EOD close patch, and RS/technical loop. No production setting changes.
 from __future__ import annotations
 
 import sys
+import os
 import time
 from pathlib import Path
 
@@ -18,12 +19,12 @@ import nse_latest_data
 import rs_engine
 
 
-def run(batch_size: int) -> dict[str, float | int]:
+def run(batch_size: int, symbols: list[str]) -> dict[str, float | int]:
     rs_engine.clear_stock_data_cache()
     started = time.perf_counter()
 
     snapshot = rs_engine._download_universe(
-        rs_engine.get_nse_symbols(),
+        symbols,
         batch_size=batch_size,
         snapshot_mode="eod",
         force_refresh=True,
@@ -69,7 +70,12 @@ def run(batch_size: int) -> dict[str, float | int]:
 
 
 def main() -> None:
-    results = [run(100), run(150)]
+    universe = rs_engine.get_nse_symbols()
+    requested = min(int(os.getenv("BENCHMARK_SYMBOLS", "600")), len(universe))
+    step = (len(universe) - 1) / (requested - 1) if requested > 1 else 0
+    symbols = [universe[round(i * step)] for i in range(requested)]
+    print(f"Benchmark universe: {len(symbols):,} representative symbols")
+    results = [run(100, symbols), run(150, symbols)]
 
     print("\nProduction-path EOD benchmark")
     print("batch | download_s | NSE_patch_s | RS_s | total_s | downloaded | usable | stale | rows")
