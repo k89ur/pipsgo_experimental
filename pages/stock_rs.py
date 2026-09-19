@@ -412,6 +412,60 @@ with main:
         with st.expander("Data diagnostics · stale / missing / history", expanded=False):
             st.caption("Diagnostic only — these checks do not change RS calculations or technical filters.")
             performance_timings = stats.get("performance_timings", {})
+            if st.button(
+                "Test persistent Yahoo cache",
+                key="stock_persistent_cache_test",
+                use_container_width=True,
+                help="Rebuild the market-data snapshot while bypassing only the in-memory snapshot cache. Persistent Yahoo batch cache is preserved.",
+            ):
+                test_mode = str(stats.get("snapshot_mode", "eod")).lower()
+                with st.spinner("Testing persistent Yahoo cache…"):
+                    try:
+                        _, cache_test_stats = run_scan(
+                            min_rs=min_rs,
+                            near_high_pct=near_high,
+                            min_price=min_price,
+                            use_minervini=use_minervini,
+                            use_ma_rising=use_ma_rising,
+                            rising_days=rising_days,
+                            batch_size=DEFAULT_BATCH_SIZE,
+                            snapshot_mode=test_mode,
+                            force_refresh=False,
+                            bypass_memory_cache=True,
+                            use_min_rs=use_min_rs,
+                            use_near_high=use_near_high,
+                            use_min_price=use_min_price,
+                        )
+                        st.session_state["stock_cache_test_stats"] = cache_test_stats
+                    except Exception as exc:
+                        st.session_state["stock_cache_test_error"] = str(exc)
+                st.rerun()
+
+            cache_test_stats = st.session_state.get("stock_cache_test_stats")
+            cache_test_error = st.session_state.get("stock_cache_test_error")
+            if cache_test_error:
+                st.error(f"Persistent cache test failed: {cache_test_error}")
+            if cache_test_stats:
+                cache_test_timings = cache_test_stats.get("performance_timings", {})
+                cache_rows = []
+                for label in [
+                    "Yahoo 2Y batches",
+                    "Yahoo cache lookups",
+                    "Yahoo cache hits",
+                    "Yahoo cache misses",
+                    "Yahoo download calls",
+                    "Yahoo 10D recovery batches",
+                    "Yahoo 10D recovery symbols requested",
+                    "Yahoo 10D recovery symbols received",
+                ]:
+                    value = cache_test_timings.get(label)
+                    if value is not None:
+                        cache_rows.append({"Metric": label, "Value": value})
+                if cache_rows:
+                    st.markdown("**Persistent cache test result**")
+                    st.dataframe(pd.DataFrame(cache_rows), use_container_width=True, hide_index=True)
+                    st.caption("Diagnostic only. The test bypasses the in-memory snapshot cache but preserves the persistent Yahoo batch cache and does not replace the displayed scan results.")
+
             if performance_timings:
                 st.markdown("**Performance timing · Audit #12.2**")
                 timing_rows = []
@@ -440,7 +494,7 @@ with main:
                 if timing_rows:
                     st.dataframe(pd.DataFrame(timing_rows), use_container_width=True, hide_index=True)
                 extra_rows = []
-                for label in ["Yahoo 2Y batches", "Yahoo cache hits", "Yahoo cache misses", "Yahoo download calls", "Yahoo symbols processed", "Yahoo 10D reference batches", "Yahoo 10D symbols requested", "Yahoo 10D symbols received", "Stale symbols recovered", "NSE closes applied", "NSE adjustment factors"]:
+                for label in ["Yahoo 2Y batches", "Yahoo cache lookups", "Yahoo cache hits", "Yahoo cache misses", "Yahoo download calls", "Yahoo symbols processed", "Yahoo 10D recovery batches", "Yahoo 10D recovery symbols requested", "Yahoo 10D recovery symbols received", "Yahoo 10D reference batches", "Yahoo 10D symbols requested", "Yahoo 10D symbols received", "Stale symbols recovered", "NSE closes applied", "NSE adjustment factors"]:
                     value = performance_timings.get(label)
                     if value is not None:
                         extra_rows.append({"Metric": label, "Value": value})
