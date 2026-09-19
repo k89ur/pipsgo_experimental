@@ -272,19 +272,20 @@ def test_rs_scores_ratings_and_filter_decisions_match() -> None:
 
     assert old_df["Symbol"].tolist() == new_df["Symbol"].tolist()
 
-    assert old_df["RS Rating"].tolist() == new_df["RS Rating"].tolist(), (
-        f"RS Rating changed: old={old_df[\'RS Rating\'].tolist()} "
-        f"new={new_df[\'RS Rating\'].tolist()}"
+    old_ratings = old_df["RS Rating"].tolist()
+    new_ratings = new_df["RS Rating"].tolist()
+    assert old_ratings == new_ratings, (
+        f"RS Rating changed: old={old_ratings} new={new_ratings}"
     )
+
+    old_scores = old_df["Raw RS Score"].to_numpy(dtype=float)
+    new_scores = new_df["Raw RS Score"].to_numpy(dtype=float)
     assert np.allclose(
-        old_df["Raw RS Score"].to_numpy(dtype=float),
-        new_df["Raw RS Score"].to_numpy(dtype=float),
+        old_scores,
+        new_scores,
         rtol=NUMERIC_REL_TOL,
         atol=NUMERIC_ABS_TOL,
-    ), (
-        f"Raw RS Score changed: old={old_df[\'Raw RS Score\'].tolist()} "
-        f"new={new_df[\'Raw RS Score\'].tolist()}"
-    )
+    ), f"Raw RS Score changed: old={old_scores.tolist()} new={new_scores.tolist()}"
 
     old_metrics = old_df.set_index("Symbol")
     new_metrics = new_df.set_index("Symbol")
