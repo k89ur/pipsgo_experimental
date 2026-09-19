@@ -110,7 +110,44 @@ def _download(symbols: Iterable[str], auto_adjust: bool) -> dict[str, pd.DataFra
         group_by="ticker",
         threads=True,
     )
-    return {s: rs_engine._clean_history(_extract(raw, s)) for s in symbols}
+
+    result = {}
+    missing = []
+    for symbol in symbols:
+        frame = rs_engine._clean_history(_extract(raw, symbol))
+        if frame.empty:
+            missing.append(symbol)
+        else:
+            result[symbol] = frame
+
+    # Regression failures must represent numerical differences, not a
+    # transient yfinance multi-download/cache error. Retry missing symbols
+    # individually without threads so one locked ticker cannot invalidate the
+    # entire fixture comparison.
+    for symbol in missing:
+        frame = pd.DataFrame()
+        for attempt in range(3):
+            single = yf.download(
+                tickers=f"{symbol}.NS",
+                period="2y",
+                interval="1d",
+                auto_adjust=auto_adjust,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            )
+            frame = rs_engine._clean_history(_extract(single, symbol))
+            if not frame.empty:
+                break
+            time.sleep(1.0 * (attempt + 1))
+        if frame.empty:
+            raise AssertionError(
+                f"Unable to download regression fixture {symbol}.NS after "
+                "multi-download fallback retries"
+            )
+        result[symbol] = frame
+
+    return result
 
 
 def _reconstruct(raw_frame: pd.DataFrame) -> pd.DataFrame:
