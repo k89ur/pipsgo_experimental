@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -339,22 +340,31 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     if not data or str(snapshot.get("mode", "eod")).lower() != "eod":
         return snapshot
 
+    performance = snapshot.setdefault("performance_timings", {})
+    patch_started = time.perf_counter()
+    mode_started = time.perf_counter()
     mode = _eod_source_mode()
+    performance["EOD source-mode check"] = time.perf_counter() - mode_started
     if snapshot.get("nse_source_mode") == mode and snapshot.get("nse_data_date"):
+        performance["EOD patch total"] = time.perf_counter() - patch_started
+        performance["NSE close patch"] = performance["EOD patch total"]
         if progress_callback:
             progress_callback(1, 1, f"NSE latest close already applied · {snapshot['nse_data_date']}")
         return snapshot
 
     if progress_callback:
         progress_callback(0, 1, "NSE bhavcopy · fetching latest EOD file from NSE")
+    nse_started = time.perf_counter()
     if mode == "today":
         nse_date, closes = fetch_latest_nse_close(require_today=True)
     else:
         nse_date, closes = fetch_latest_nse_close(max_lookback_days=10, require_today=False)
+    performance["NSE bhavcopy"] = time.perf_counter() - nse_started
     if progress_callback:
         progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(closes):,} closing prices · {nse_date}")
 
     total_symbols = len(data)
+    recent_started = time.perf_counter()
     raw_recent = _download_raw_recent(
         list(data.keys()),
         progress_callback=(
@@ -362,7 +372,12 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
             if progress_callback else None
         ),
     )
+    performance["Yahoo 10D reference"] = time.perf_counter() - recent_started
+    performance["Yahoo 10D reference batches"] = (total_symbols + 99) // 100
+    performance["Yahoo 10D symbols requested"] = total_symbols
+    performance["Yahoo 10D symbols received"] = len(raw_recent)
     target = pd.Timestamp(nse_date)
+    apply_started = time.perf_counter()
     updated = 0
     factor_count = 0
     for symbol, frame in data.items():
@@ -403,7 +418,14 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
+    performance["Apply NSE closes"] = time.perf_counter() - apply_started
+    diagnostics_started = time.perf_counter()
     _refresh_snapshot_diagnostics(snapshot)
+    performance["Snapshot diagnostics refresh"] = time.perf_counter() - diagnostics_started
+    performance["NSE closes applied"] = updated
+    performance["NSE adjustment factors"] = factor_count
+    performance["EOD patch total"] = time.perf_counter() - patch_started
+    performance["NSE close patch"] = performance["EOD patch total"]
     if progress_callback:
         progress_callback(1, 1, f"NSE latest close applied · {updated:,} symbols")
     return snapshot
