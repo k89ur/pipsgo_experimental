@@ -16,7 +16,7 @@ import yfinance as yf
 NSE_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 SECTOR_INDUSTRY_URL = "https://drive.google.com/uc?export=download&id=1Auelz4iprUIV578TPc_C5i_EEol43i9c"
 STOCK_INDEX_URL = "https://drive.google.com/uc?export=download&confirm=t&id=19auf-ZldcujlMEiznNUMYTFBiokST2ro"
-DEFAULT_BATCH_SIZE = 100
+DEFAULT_BATCH_SIZE = 150
 MIN_SAFE_UNIVERSE_SIZE = 1000
 IST = ZoneInfo("Asia/Kolkata")
 _STOCK_DATA_CACHE: dict[tuple[str, str, tuple[str, ...], int], dict] = {}
