@@ -80,11 +80,35 @@ def _clean_history(frame: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
     x["Close"] = pd.to_numeric(x["Close"], errors="coerce")
-    if "High" in x.columns:
-        x["High"] = pd.to_numeric(x["High"], errors="coerce")
+    for col in ("Open", "High", "Low", "Adjustment Factor"):
+        if col in x.columns:
+            x[col] = pd.to_numeric(x[col], errors="coerce")
     x = x.replace([np.inf, -np.inf], np.nan)
     x = x[x["Close"] > 0]
     return x
+
+
+def _reconstruct_adjusted(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rebuild yfinance's auto-adjusted OHLC from raw OHLC + Adj Close."""
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    required = {"Open", "High", "Low", "Close", "Adj Close"}
+    if not required.issubset(frame.columns):
+        return pd.DataFrame()
+    x = frame.copy()
+    raw_close = pd.to_numeric(x["Close"], errors="coerce")
+    adj_close = pd.to_numeric(x["Adj Close"], errors="coerce")
+    factor = (adj_close / raw_close).replace([np.inf, -np.inf], np.nan)
+    valid = factor.notna() & raw_close.gt(0)
+    if not valid.any():
+        return pd.DataFrame()
+    x = x.loc[valid].copy()
+    factor = factor.loc[valid]
+    for col in ("Open", "High", "Low", "Close"):
+        x[col] = pd.to_numeric(x[col], errors="coerce") * factor
+    x["Adjustment Factor"] = factor
+    x = x.drop(columns=["Adj Close"], errors="ignore")
+    return _clean_history(x)
 
 
 def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
@@ -103,7 +127,7 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
                     x = raw.xs(t, axis=1, level=1).copy()
                 else:
                     continue
-                x = _clean_history(x)
+                x = _reconstruct_adjusted(x)
                 if not x.empty:
                     result[s] = x
             except Exception:
@@ -111,7 +135,7 @@ def _extract_downloaded(raw: pd.DataFrame, symbols: list[str]) -> dict[str, pd.D
     else:
         s = symbols[0]
         if "Close" in raw.columns:
-            x = _clean_history(raw)
+            x = _reconstruct_adjusted(raw)
             if not x.empty:
                 result[s] = x
     return result
@@ -126,7 +150,7 @@ def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True, 
                 tickers=tickers,
                 period=period,
                 interval="1d",
-                auto_adjust=True,
+                auto_adjust=False,
                 progress=False,
                 group_by="ticker",
                 threads=threads,
