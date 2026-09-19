@@ -257,7 +257,7 @@ def test_price_metrics_and_ohlc_match_reference() -> None:
         assert comparison.status == "PASS", comparison
 
         old_metrics = _production_metrics(symbol, old[symbol])
-        new_metrics = _production_metrics(symbol, reconstructed[symbol])
+        new_metrics = _production_metrics(symbol, reconstructed)
         _compare_numeric_dicts(symbol, old_metrics, new_metrics)
 
 
