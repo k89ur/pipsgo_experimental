@@ -437,37 +437,17 @@ def install_nse_latest_close(engine_module) -> None:
         return
 
     original_download_universe = engine_module._download_universe
-    original_download_batch = engine_module._download_batch
     original_clear_cache = engine_module.clear_stock_data_cache
 
-    def cached_download_batch(symbols, retries=3, threads=True, period="2y"):
-        cache_day = f"{datetime.now(IST).date().isoformat()}:raw-adjusted-v1"
-        before_calls = int(engine_module._DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
-        try:
-            result = _cached_engine_batch(
-                tuple(symbols), period, threads, cache_day, original_download_batch
-            )
-            after_calls = int(engine_module._DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
-            if after_calls == before_calls:
-                engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache hits"] += 1
-            else:
-                engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache misses"] += 1
-            return result
-        except RuntimeError:
-            engine_module._DOWNLOAD_DIAGNOSTICS["Yahoo cache misses"] += 1
-            return original_download_batch(symbols, retries=retries, threads=threads, period=period)
-
     def wrapped_download_universe(*args, **kwargs):
-        engine_module._download_batch = cached_download_batch
-        try:
-            snapshot = original_download_universe(*args, **kwargs)
-        finally:
-            engine_module._download_batch = original_download_batch
+        # Batch caching is owned by snapshot_cache. Keeping a single cache layer
+        # ensures both 2Y snapshots and 10D stale recovery use the same persistent
+        # cache instead of one cache wrapper bypassing another.
+        snapshot = original_download_universe(*args, **kwargs)
         return patch_snapshot(snapshot, kwargs.get("progress_callback"))
 
     def clear_all_stock_data_cache():
         original_clear_cache()
-        _cached_engine_batch.clear()
         _fetch_latest_nse_close_cached.clear()
 
     engine_module._download_universe = wrapped_download_universe
