@@ -48,8 +48,12 @@ def install(engine_module) -> None:
         if not symbols:
             return {}
         diagnostics = getattr(engine_module, "_DOWNLOAD_DIAGNOSTICS", None)
+        period_label = str(period).strip().upper()
+        period_prefix = f"Yahoo {period_label} cache"
+        misses_before = int(diagnostics.get("Yahoo cache misses", 0)) if diagnostics is not None else 0
         if diagnostics is not None:
             diagnostics["Yahoo cache lookups"] = int(diagnostics.get("Yahoo cache lookups", 0)) + 1
+            diagnostics[f"{period_prefix} lookups"] = int(diagnostics.get(f"{period_prefix} lookups", 0)) + 1
         cache_day = f"{datetime.now(IST).date().isoformat()}:raw-adjusted-v1"
         try:
             result = _cached_stock_batch(
@@ -65,6 +69,10 @@ def install(engine_module) -> None:
                 lookups = int(diagnostics.get("Yahoo cache lookups", 0))
                 misses = int(diagnostics.get("Yahoo cache misses", 0))
                 diagnostics["Yahoo cache hits"] = max(0, lookups - misses)
+                misses_after = int(diagnostics.get("Yahoo cache misses", 0))
+                period_misses = misses_after - misses_before
+                diagnostics[f"{period_prefix} misses"] = int(diagnostics.get(f"{period_prefix} misses", 0)) + period_misses
+                diagnostics[f"{period_prefix} hits"] = int(diagnostics.get(f"{period_prefix} hits", 0)) + (0 if period_misses else 1)
             return result
         except RuntimeError:
             # Never persist partial batches; let the engine's recovery logic handle them.
