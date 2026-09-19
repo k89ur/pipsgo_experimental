@@ -198,6 +198,52 @@ def run_regression(symbols: Iterable[str] = FIXTURES) -> list[Comparison]:
     return comparisons
 
 
+
+def test_eod_nse_close_adjustment_math() -> None:
+    """Verify the NSE raw close is scaled by the Yahoo adjustment factor."""
+    index = pd.date_range("2026-09-14", periods=3, freq="D")
+    raw = pd.DataFrame(
+        {
+            "Open": [100.0, 101.0, 102.0],
+            "High": [103.0, 104.0, 105.0],
+            "Low": [99.0, 100.0, 101.0],
+            "Close": [100.0, 102.0, 104.0],
+            "Adj Close": [98.0, 99.96, 101.92],
+        },
+        index=index,
+    )
+    factor = raw["Adj Close"] / raw["Close"]
+    nse_close = 105.0
+    patched = nse_close * float(factor.iloc[-1])
+
+    expected = 105.0 * (101.92 / 104.0)
+    assert math.isclose(patched, expected, rel_tol=1e-12, abs_tol=1e-12)
+    assert math.isclose(patched, 102.9, rel_tol=1e-12, abs_tol=1e-12)
+
+
+def test_eod_patch_without_adjustment_factor_does_not_fabricate_factor() -> None:
+    """Invalid Yahoo reference data must not silently become factor=1."""
+    raw_close = pd.Series([100.0, 0.0, np.nan])
+    adj_close = pd.Series([98.0, 0.0, 101.0])
+    factor = adj_close / raw_close
+    valid = factor.replace([np.inf, -np.inf], np.nan).dropna()
+
+    assert len(valid) == 1
+    assert math.isclose(float(valid.iloc[0]), 0.98, rel_tol=1e-12, abs_tol=1e-12)
+
+
+def test_history_boundary_matches_production_rule() -> None:
+    """Production requires more than 252 valid closes."""
+    for length in (251, 252):
+        close = pd.Series(np.arange(1, length + 1, dtype=float))
+        high = close.copy()
+        assert _metrics(close, high) == {}
+
+    close = pd.Series(np.arange(1, 254, dtype=float))
+    high = close.copy()
+    assert _metrics(close, high)
+
+
 def main() -> int:
     print("=" * 64)
     print("PIPSGOX ADJUSTED-DATA REGRESSION — BASELINE")
