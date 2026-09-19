@@ -276,6 +276,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Yahoo 10D cache lookups": 0,
         "Yahoo 10D cache hits": 0,
         "Yahoo 10D cache misses": 0,
+        "Yahoo 10D recovery network calls": 0,
         "Yahoo 10D recovery batches": 0,
         "Yahoo 10D recovery symbols requested": 0,
         "Yahoo 10D recovery symbols received": 0,
@@ -367,6 +368,9 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
             # Persistent-cache hits need no network pacing and should not pay the
             # fixed 250ms inter-batch delay.
             after_download_calls = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery network calls"] = int(
+                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery network calls", 0)
+            ) + max(0, after_download_calls - before_download_calls)
             if start + recovery_batch_size < total_stale and after_download_calls > before_download_calls:
                 time.sleep(0.25)
     performance_timings["Stale-data recovery"] = time.perf_counter() - recovery_started
@@ -376,6 +380,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
     performance_timings["Yahoo 10D recovery request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0))
     performance_timings["Yahoo 10D recovery reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0))
+    performance_timings["Yahoo 10D recovery network calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery network calls", 0))
 
     usable = [
         symbol
