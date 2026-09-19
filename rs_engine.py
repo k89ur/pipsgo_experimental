@@ -444,15 +444,25 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     stale_set = set(snapshot["stale_data_symbols"])
     coverage = snapshot["usable_coverage"]
     rows = []
+    calc_total = len(data)
+    calc_done = 0
+    if progress_callback:
+        progress_callback(0, calc_total, f"Calculating RS & technical filters · {str(snapshot_mode).upper()}")
     for symbol, x in data.items():
         if symbol in stale_set:
+            calc_done += 1
+            if progress_callback and (calc_done == calc_total or calc_done % 100 == 0):
+                progress_callback(calc_done, calc_total, f"Calculating RS & technical filters · {calc_done:,}/{calc_total:,}")
             continue
         try:
             m = _metrics(symbol, x, rising_days, calculate_ma_rising=use_ma_rising, snapshot_mode=snapshot_mode)
             if m:
                 rows.append(m)
         except Exception:
-            continue
+            pass
+        calc_done += 1
+        if progress_callback and (calc_done == calc_total or calc_done % 100 == 0):
+            progress_callback(calc_done, calc_total, f"Calculating RS & technical filters · {calc_done:,}/{calc_total:,}")
     if not rows:
         raise RuntimeError("No usable stock data was returned.")
     df = pd.DataFrame(rows)
