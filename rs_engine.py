@@ -20,6 +20,12 @@ DEFAULT_BATCH_SIZE = 100
 MIN_SAFE_UNIVERSE_SIZE = 1000
 IST = ZoneInfo("Asia/Kolkata")
 _STOCK_DATA_CACHE: dict[tuple[str, str, tuple[str, ...], int], dict] = {}
+_DOWNLOAD_DIAGNOSTICS: dict[str, float | int] = {
+    "Yahoo request time": 0.0,
+    "Adjusted reconstruction time": 0.0,
+    "Yahoo download calls": 0,
+    "Yahoo symbols processed": 0,
+}
 
 
 def _normalize_symbol_list(values) -> list[str]:
@@ -146,6 +152,7 @@ def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True, 
     last_result: dict[str, pd.DataFrame] = {}
     for attempt in range(retries):
         try:
+            request_started = time.perf_counter()
             raw = yf.download(
                 tickers=tickers,
                 period=period,
@@ -155,7 +162,13 @@ def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True, 
                 group_by="ticker",
                 threads=threads,
             )
+            _DOWNLOAD_DIAGNOSTICS["Yahoo request time"] += time.perf_counter() - request_started
+            _DOWNLOAD_DIAGNOSTICS["Yahoo download calls"] += 1
+            _DOWNLOAD_DIAGNOSTICS["Yahoo symbols processed"] += len(symbols)
+
+            reconstruct_started = time.perf_counter()
             result = _extract_downloaded(raw, symbols)
+            _DOWNLOAD_DIAGNOSTICS["Adjusted reconstruction time"] += time.perf_counter() - reconstruct_started
             if len(result) == len(symbols):
                 return result
             last_result = result
@@ -268,6 +281,10 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
 
     performance_timings["Yahoo 2Y / snapshot download"] = time.perf_counter() - history_started
     performance_timings["Yahoo 2Y batches"] = batch_count
+    performance_timings["Yahoo request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo request time", 0.0))
+    performance_timings["Adjusted reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
+    performance_timings["Yahoo download calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
+    performance_timings["Yahoo symbols processed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo symbols processed", 0))
 
     # Bulk 2-year downloads can be complete but one trading day behind.
     # Recover the latest bars using a short recent window, then merge them into
@@ -340,6 +357,12 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
 
 def clear_stock_data_cache() -> None:
     _STOCK_DATA_CACHE.clear()
+    _DOWNLOAD_DIAGNOSTICS.update({
+        "Yahoo request time": 0.0,
+        "Adjusted reconstruction time": 0.0,
+        "Yahoo download calls": 0,
+        "Yahoo symbols processed": 0,
+    })
 
 
 def _return_at_days(close: pd.Series, days: int) -> float:
