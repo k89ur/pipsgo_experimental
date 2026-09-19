@@ -476,6 +476,8 @@ with main:
                     "Yahoo request time",
                     "Adjusted reconstruction time",
                     "Stale-data recovery",
+                    "Yahoo 10D recovery request time",
+                    "Yahoo 10D recovery reconstruction time",
                     "NSE bhavcopy",
                     "Yahoo 10D reference",
                     "Apply NSE closes",
