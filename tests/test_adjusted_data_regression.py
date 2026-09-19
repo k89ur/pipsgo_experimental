@@ -11,12 +11,15 @@ Run:
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import pytest
+import time
 
 import rs_engine
 
@@ -305,6 +308,51 @@ def test_rs_scores_ratings_and_filter_decisions_match() -> None:
                 rel_tol=NUMERIC_REL_TOL,
                 abs_tol=NUMERIC_ABS_TOL,
             )
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_YAHOO_BATCH_BENCHMARK") != "1",
+    reason="Yahoo batch benchmark is opt-in",
+)
+def test_yahoo_batch_size_benchmark() -> None:
+    """Measure 100/150/200 batches without changing production settings."""
+    count = int(os.getenv("YAHOO_BENCHMARK_SYMBOLS", "600"))
+    batch_sizes = (100, 150, 200)
+
+    universe = rs_engine.get_nse_symbols()
+    count = min(max(count, 1), len(universe))
+    step = (len(universe) - 1) / (count - 1) if count > 1 else 0
+    symbols = [universe[round(i * step)] for i in range(count)]
+
+    results = []
+    for batch_size in batch_sizes:
+        rs_engine._DOWNLOAD_DIAGNOSTICS.update({
+            "Yahoo request time": 0.0,
+            "Adjusted reconstruction time": 0.0,
+            "Yahoo download calls": 0,
+            "Yahoo symbols processed": 0,
+        })
+        started = time.perf_counter()
+        received = 0
+        for start in range(0, len(symbols), batch_size):
+            result = rs_engine._download_batch(
+                symbols[start:start + batch_size],
+                retries=2,
+                threads=True,
+                period="2y",
+            )
+            received += len(result)
+        wall = time.perf_counter() - started
+        results.append((batch_size, wall, received))
+
+    print("\\nYahoo batch benchmark")
+    for batch_size, wall, received in results:
+        print(
+            f"batch={batch_size} wall={wall:.2f}s "
+            f"received={received}/{len(symbols)}"
+        )
+
+    assert all(received > 0 for _, _, received in results)
 
 
 def test_history_boundary_matches_production_rule() -> None:
