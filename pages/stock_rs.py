@@ -8,8 +8,8 @@ from nse_latest_data import install_nse_latest_close, source_check, eod_scan_mar
 from snapshot_cache import install as install_persistent_snapshot
 from fno_stocks import filter_fno_results
 
-install_nse_latest_close(rs_engine)
 install_persistent_snapshot(rs_engine)
+install_nse_latest_close(rs_engine)
 run_scan = rs_engine.run_scan
 DEFAULT_BATCH_SIZE = rs_engine.DEFAULT_BATCH_SIZE
 clear_stock_data_cache = rs_engine.clear_stock_data_cache
