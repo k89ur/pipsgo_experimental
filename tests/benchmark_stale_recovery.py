@@ -42,3 +42,42 @@ def main() -> None:
     print(f"Initial 2Y time: {initial_seconds:.2f}s")
     print(f"Target date: {target}")
     print(f"Synthetic stale symbols: {len(stale):,}")
+
+
+    print()
+    print("Recovery window | time_s | received | exact_target_date")
+
+    results = []
+    for days in (10, 5):
+        request_started = time.perf_counter()
+        recovered = {}
+        for start in range(0, len(stale), 50):
+            group = stale[start:start + 50]
+            recovered.update(
+                rs_engine._download_batch(
+                    group,
+                    retries=2,
+                    threads=True,
+                    period=f"{days}d",
+                )
+            )
+        elapsed = time.perf_counter() - request_started
+        exact = sum(
+            1 for frame in recovered.values()
+            if rs_engine._latest_date(frame) == target
+        )
+        results.append((days, elapsed, len(recovered), exact))
+        print(
+            f"{days:>14} | {elapsed:>6.2f} | "
+            f"{len(recovered):>8} | {exact:>17}"
+        )
+
+    ten, five = results
+    assert len(stale) == 16, f"Expected 16 synthetic stale symbols, got {len(stale)}"
+    assert five[3] == ten[3] == 16, (
+        f"5D exact recovery differs: 5D={five[3]} vs 10D={ten[3]}"
+    )
+
+
+if __name__ == "__main__":
+    main()
