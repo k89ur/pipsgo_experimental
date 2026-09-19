@@ -299,6 +299,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Adjusted reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
     performance_timings["Yahoo download calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
     performance_timings["Yahoo symbols processed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo symbols processed", 0))
+    performance_timings["Yahoo cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache lookups", 0))
     performance_timings["Yahoo cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache hits", 0))
     performance_timings["Yahoo cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache misses", 0))
 
