@@ -222,9 +222,11 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         return cached
 
     total = len(symbols)
+    performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
     failed: list[str] = []
     batch_count = (total + batch_size - 1) // batch_size
+    history_started = time.perf_counter()
     for batch_no, start in enumerate(range(0, total, batch_size), start=1):
         batch = symbols[start:start + batch_size]
         if progress_callback:
@@ -240,6 +242,9 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         if progress_callback:
             progress_callback(done, total, f"{mode.upper()} data · {len(data):,} received")
 
+    performance_timings["Yahoo 2Y / snapshot download"] = time.perf_counter() - history_started
+    performance_timings["Yahoo 2Y batches"] = batch_count
+
     # Bulk 2-year downloads can be complete but one trading day behind.
     # Recover the latest bars using a short recent window, then merge them into
     # the original 2-year histories. This avoids thousands of individual calls.
@@ -247,6 +252,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     initial_dates = [date for date in initial_dates if date]
     target_date = max(initial_dates) if initial_dates else None
     stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
+    recovery_started = time.perf_counter()
     if stale_symbols:
         total_stale = len(stale_symbols)
         if progress_callback:
@@ -263,6 +269,8 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
                 progress_callback(done, total_stale, f"Stale-data recovery · {done:,}/{total_stale:,}")
             if start + recovery_batch_size < total_stale:
                 time.sleep(0.25)
+    performance_timings["Stale-data recovery"] = time.perf_counter() - recovery_started
+    performance_timings["Stale symbols recovered"] = len(stale_symbols)
 
     usable = [
         symbol
@@ -298,6 +306,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "short_history_count": len(short_history),
         "usable": len(usable),
         "usable_coverage": (len(usable) / total * 100) if total else 0,
+        "performance_timings": performance_timings,
     }
     _STOCK_DATA_CACHE[key] = snapshot
     if progress_callback:
