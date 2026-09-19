@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 from datetime import datetime, time
@@ -307,6 +308,8 @@ if scan_live or scan_eod:
     )
     progress_slot.progress(0, text=f"{scan_name} · Starting…")
     try:
+        scan_wall_started = time.perf_counter()
+
         def stock_update(done, total, label):
             text = str(label)
             lower = text.lower()
@@ -349,6 +352,8 @@ if scan_live or scan_eod:
             unsafe_allow_html=True,
         )
         progress_slot.progress(99, text=f"{scan_name} · Preparing final results…")
+        performance_timings = dict(stats.get("performance_timings", {}))
+        fno_started = time.perf_counter()
         try:
             fno_df = filter_fno_results(scan_df)
             fno_symbols = set(fno_df["Symbol"].astype(str).str.strip().str.upper()) if fno_df is not None and not fno_df.empty else set()
@@ -359,6 +364,9 @@ if scan_live or scan_eod:
             df = scan_df.copy()
             st.session_state.fno_result = pd.DataFrame()
             st.session_state.fno_error = "F&O list is currently unavailable. Main Results are unaffected."
+        performance_timings["F&O partition + result preparation"] = time.perf_counter() - fno_started
+        performance_timings["Stock RS scan wall time"] = time.perf_counter() - scan_wall_started
+        stats["performance_timings"] = performance_timings
         st.session_state.stock_result = df
         st.session_state.stock_stats = stats
         st.session_state.stock_stats["total_matches"] = total_matches
@@ -403,6 +411,39 @@ with main:
         short_history = stats.get("short_history", [])
         with st.expander("Data diagnostics · stale / missing / history", expanded=False):
             st.caption("Diagnostic only — these checks do not change RS calculations or technical filters.")
+            performance_timings = stats.get("performance_timings", {})
+            if performance_timings:
+                st.markdown("**Performance timing · Audit #12.2**")
+                timing_rows = []
+                timing_order = [
+                    "NSE universe",
+                    "Market data snapshot",
+                    "Yahoo 2Y / snapshot download",
+                    "Stale-data recovery",
+                    "NSE bhavcopy",
+                    "Yahoo 10D reference",
+                    "Apply NSE closes",
+                    "Snapshot diagnostics refresh",
+                    "RS & technical loop",
+                    "RS scoring & filters",
+                    "Index / Industry metadata",
+                    "F&O partition + result preparation",
+                    "Scan total (backend)",
+                    "Stock RS scan wall time",
+                ]
+                for label in timing_order:
+                    value = performance_timings.get(label)
+                    if isinstance(value, (int, float)):
+                        timing_rows.append({"Stage": label, "Time (s)": round(float(value), 3)})
+                if timing_rows:
+                    st.dataframe(pd.DataFrame(timing_rows), use_container_width=True, hide_index=True)
+                extra_rows = []
+                for label in ["Yahoo 2Y batches", "Yahoo 10D reference batches", "Yahoo 10D symbols requested", "Yahoo 10D symbols received", "Stale symbols recovered", "NSE closes applied", "NSE adjustment factors"]:
+                    value = performance_timings.get(label)
+                    if value is not None:
+                        extra_rows.append({"Metric": label, "Value": value})
+                if extra_rows:
+                    st.dataframe(pd.DataFrame(extra_rows), use_container_width=True, hide_index=True)
             d1, d2, d3 = st.columns(3)
             d1.metric("Stale", f"{stale_count:,}")
             d2.metric("Missing", f"{len(missing_symbols):,}")
