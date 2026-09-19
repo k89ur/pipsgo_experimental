@@ -107,7 +107,7 @@ def _download(symbols: Iterable[str], auto_adjust: bool) -> dict[str, pd.DataFra
         group_by="ticker",
         threads=True,
     )
-    return {s: _extract(raw, s) for s in symbols}
+    return {s: rs_engine._clean_history(_extract(raw, s)) for s in symbols}
 
 
 def _reconstruct(raw_frame: pd.DataFrame) -> pd.DataFrame:
