@@ -248,6 +248,8 @@ main, side = st.columns([4.7, 1.35], gap="large")
 with side:
     with st.container(border=True):
         st.markdown('<div class="right-title">Scanner status</div>', unsafe_allow_html=True)
+        scan_mode_slot = st.empty()
+        stage_slot = st.empty()
         progress_slot = st.empty()
         status_slot = st.empty()
         stats_slot = st.empty()
@@ -290,14 +292,63 @@ if scan_live or scan_eod:
         except Exception as e:
             status.error(f"Unable to verify NSE Capital Market session status. After Market Scan is blocked for safety. ({e})")
             st.stop()
-    progress_slot.progress(0, text="Starting scan…")
+    stage_total = 5 if mode == "eod" else 3
+    scan_name = "AFTER MARKET SCAN" if mode == "eod" else "LIVE MARKET SCAN"
+    scan_subtitle = "EOD snapshot · NSE official close" if mode == "eod" else "Daily market snapshot"
+    scan_mode_slot.markdown(
+        f"<div style='font-size:.78rem;font-weight:800;letter-spacing:.04em;'>● {scan_name}</div>"
+        f"<div style='font-size:.67rem;opacity:.68;margin-top:.08rem;'>{scan_subtitle}</div>",
+        unsafe_allow_html=True,
+    )
+    stage_slot.markdown(
+        f"<div style='font-size:.72rem;font-weight:700;margin-top:.45rem;'>Stage 1 of {stage_total}</div>"
+        f"<div style='font-size:.68rem;opacity:.72;'>Preparing scanner…</div>",
+        unsafe_allow_html=True,
+    )
+    progress_slot.progress(0, text=f"{scan_name} · Starting…")
     try:
         def stock_update(done, total, label):
-            pct = int(done / total * 100) if total else 0
-            progress_slot.progress(pct, text=f"{label} · {done:,}/{total:,}")
+            text = str(label)
+            lower = text.lower()
+            if "calculating rs" in lower:
+                stage = stage_total if mode == "eod" else 2
+                base, span = (90, 8) if mode == "eod" else (72, 25)
+                stage_name = "Calculating RS & technical filters"
+            elif "applying nse eod closes" in lower:
+                stage, base, span, stage_name = 4, 80, 10, "Applying NSE EOD closes"
+            elif "recent reference data" in lower or "nse stage" in lower:
+                stage, base, span, stage_name = 3, 65, 15, "Loading recent reference data"
+            elif "nse bhavcopy" in lower:
+                stage, base, span, stage_name = 2, 60, 5, "Loading latest NSE bhavcopy"
+            elif "recovering" in lower:
+                stage, base, span, stage_name = 1, 52, 8, "Recovering stale market data"
+            elif "snapshot ready" in lower:
+                stage, base, span, stage_name = 1, 60, 0, "Market data ready"
+            else:
+                stage, base, span, stage_name = 1, 0, 60, "Loading market data"
+            if mode == "intraday" and stage == 3 and "calculating" not in lower:
+                stage, base, span, stage_name = 2, 72, 0, "Preparing results"
+            fraction = (done / total) if total else 0
+            pct = min(99, int(base + span * fraction)) if span else base
+            if "calculating rs" in lower and done >= total:
+                pct = 98 if mode == "eod" else 97
+            if "nse bhavcopy" in lower and done >= total:
+                pct = 65
+            stage_slot.markdown(
+                f"<div style='font-size:.72rem;font-weight:700;margin-top:.45rem;'>Stage {stage} of {stage_total}</div>"
+                f"<div style='font-size:.68rem;opacity:.72;'>{stage_name}</div>",
+                unsafe_allow_html=True,
+            )
+            progress_slot.progress(pct, text=f"{scan_name} · {text}")
         with st.spinner("Running stock scan…"):
             scan_df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
         total_matches = len(scan_df)
+        stage_slot.markdown(
+            f"<div style='font-size:.72rem;font-weight:700;margin-top:.45rem;'>Stage {stage_total} of {stage_total}</div>"
+            f"<div style='font-size:.68rem;opacity:.72;'>Preparing final results…</div>",
+            unsafe_allow_html=True,
+        )
+        progress_slot.progress(99, text=f"{scan_name} · Preparing final results…")
         try:
             fno_df = filter_fno_results(scan_df)
             fno_symbols = set(fno_df["Symbol"].astype(str).str.strip().str.upper()) if fno_df is not None and not fno_df.empty else set()
@@ -313,9 +364,20 @@ if scan_live or scan_eod:
         st.session_state.stock_stats["total_matches"] = total_matches
         st.session_state.fno_full_table = False
         st.session_state.pop("fno_columns", None)
-        progress_slot.empty()
+        progress_slot.progress(100, text=f"{scan_name} · Scan complete")
+        stage_slot.markdown(
+            f"<div style='font-size:.72rem;font-weight:700;margin-top:.45rem;'>✓ {scan_name} COMPLETE</div>"
+            f"<div style='font-size:.68rem;opacity:.72;'>Results are ready.</div>",
+            unsafe_allow_html=True,
+        )
     except Exception as e:
         progress_slot.empty()
+        scan_mode_slot.markdown(
+            f"<div style='font-size:.78rem;font-weight:800;letter-spacing:.04em;'>⚠ {scan_name}</div>"
+            f"<div style='font-size:.67rem;opacity:.68;margin-top:.08rem;'>Scan failed</div>",
+            unsafe_allow_html=True,
+        )
+        stage_slot.empty()
         message = str(e)
         if mode == "eod" and "Today's NSE EOD bhavcopy is not available yet" in message:
             status.warning("After Market Scan data is not available yet. NSE has not published today's EOD market data. Please try again after the EOD data is released.")
