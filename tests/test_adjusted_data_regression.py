@@ -157,6 +157,9 @@ def _compare_numeric_dicts(symbol: str, old: dict, new: dict) -> None:
         if isinstance(a, (bool, np.bool_)) or isinstance(b, (bool, np.bool_)):
             assert bool(a) == bool(b), f"{symbol}: boolean mismatch {key}: {a} vs {b}"
             continue
+        if isinstance(a, str) or isinstance(b, str):
+            assert str(a) == str(b), f"{symbol}: string mismatch {key}: {a} vs {b}"
+            continue
         if isinstance(a, (int, np.integer)) or isinstance(b, (int, np.integer)):
             assert int(a) == int(b), f"{symbol}: integer mismatch {key}: {a} vs {b}"
             continue
