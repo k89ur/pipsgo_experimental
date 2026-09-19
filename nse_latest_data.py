@@ -441,7 +441,7 @@ def install_nse_latest_close(engine_module) -> None:
     original_clear_cache = engine_module.clear_stock_data_cache
 
     def cached_download_batch(symbols, retries=3, threads=True, period="2y"):
-        cache_day = datetime.now(IST).date().isoformat()
+        cache_day = f"{datetime.now(IST).date().isoformat()}:raw-adjusted-v1"
         try:
             return _cached_engine_batch(
                 tuple(symbols), period, threads, cache_day, original_download_batch
