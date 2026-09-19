@@ -7,7 +7,12 @@ NSE EOD close patch, and RS/technical loop. No production setting changes.
 
 from __future__ import annotations
 
+import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 import nse_latest_data
 import rs_engine
