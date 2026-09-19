@@ -436,9 +436,16 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
 
 
 def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
+    scan_started = time.perf_counter()
+    timings = {}
+    universe_started = time.perf_counter()
     symbols = get_nse_symbols()
+    timings["NSE universe"] = time.perf_counter() - universe_started
     total = len(symbols)
+    snapshot_started = time.perf_counter()
     snapshot = _download_universe(symbols, batch_size=batch_size, snapshot_mode=snapshot_mode, force_refresh=force_refresh, progress_callback=progress_callback)
+    timings["Market data snapshot"] = time.perf_counter() - snapshot_started
+    timings.update(snapshot.get("performance_timings", {}))
     data = snapshot["data"]
     downloaded = snapshot["downloaded"]
     stale_set = set(snapshot["stale_data_symbols"])
@@ -446,6 +453,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     rows = []
     calc_total = len(data)
     calc_done = 0
+    calc_started = time.perf_counter()
     if progress_callback:
         progress_callback(0, calc_total, f"Calculating RS & technical filters · {str(snapshot_mode).upper()}")
     for symbol, x in data.items():
@@ -463,8 +471,10 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         calc_done += 1
         if progress_callback and (calc_done == calc_total or calc_done % 100 == 0):
             progress_callback(calc_done, calc_total, f"Calculating RS & technical filters · {calc_done:,}/{calc_total:,}")
+    timings["RS & technical loop"] = time.perf_counter() - calc_started
     if not rows:
         raise RuntimeError("No usable stock data was returned.")
+    scoring_started = time.perf_counter()
     df = pd.DataFrame(rows)
     ret_cols = ["3M %", "6M %", "9M %", "12M %"]
     df = df.dropna(subset=ret_cols).copy()
@@ -480,6 +490,8 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"])].copy()
     if use_ma_rising:
         df = df[df["50 DMA Rising"] & df["150 DMA Rising"] & df["200 DMA Rising"]].copy()
+    timings["RS scoring & filters"] = time.perf_counter() - scoring_started
+    metadata_started = time.perf_counter()
     df = df.sort_values(["RS Rating", "Raw RS Score"], ascending=False).reset_index(drop=True)
     if not df.empty:
         industry_metadata = _sector_industry_results(df["Symbol"].astype(str).tolist())
@@ -493,6 +505,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     else:
         df["Industry"] = pd.Series(dtype=str)
         df["Index"] = pd.Series(dtype=str)
+    timings["Index / Industry metadata"] = time.perf_counter() - metadata_started
     df["TradingView"] = "https://www.tradingview.com/chart/?symbol=NSE%3A" + df["Symbol"].astype(str)
     df["GoCharting"] = "https://gocharting.com/terminal?ticker=NSE%3A" + df["Symbol"].astype(str)
     columns = ["Symbol", "Index", "Industry", "LTP", "RS Rating", "Raw RS Score", "3M %", "6M %", "9M %", "12M %", "52W High", "From 52W High %", "50 DMA", "150 DMA", "200 DMA", "50 DMA Rising", "150 DMA Rising", "200 DMA Rising", "History Days", "TradingView", "GoCharting"]
@@ -519,5 +532,9 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
         "date_distribution": snapshot["date_distribution"],
         "downloaded_at": snapshot["downloaded_at"],
         "batch_size": batch_size,
+        "performance_timings": {
+            **timings,
+            "Scan total (backend)": time.perf_counter() - scan_started,
+        },
     }
     return df, stats
