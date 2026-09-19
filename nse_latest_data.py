@@ -140,10 +140,13 @@ def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = Fal
     return _fetch_latest_nse_close_cached(max_lookback_days, require_today, cache_day)
 
 
-def _download_raw_recent(symbols: list[str]) -> dict[str, pd.DataFrame]:
+def _download_raw_recent(symbols: list[str], progress_callback=None) -> dict[str, pd.DataFrame]:
     result: dict[str, pd.DataFrame] = {}
+    total = len(symbols)
     for start in range(0, len(symbols), 100):
         group = symbols[start:start + 100]
+        if progress_callback:
+            progress_callback(min(start, total), total, f"Refreshing recent reference data · {min(start, total):,}/{total:,}")
         try:
             raw = yf.download(
                 tickers=[f"{s}.NS" for s in group], period="10d", interval="1d",
@@ -341,13 +344,22 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         return snapshot
 
     if progress_callback:
-        progress_callback(0, 1, "Loading latest NSE bhavcopy")
+        progress_callback(0, 1, "NSE bhavcopy · fetching latest EOD file from NSE")
     if mode == "today":
         nse_date, closes = fetch_latest_nse_close(require_today=True)
     else:
         nse_date, closes = fetch_latest_nse_close(max_lookback_days=10, require_today=False)
+    if progress_callback:
+        progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(closes):,} closing prices · {nse_date}")
 
-    raw_recent = _download_raw_recent(list(data.keys()))
+    total_symbols = len(data)
+    raw_recent = _download_raw_recent(
+        list(data.keys()),
+        progress_callback=(
+            (lambda done, total, label: progress_callback(done, total, f"NSE stage · {label}"))
+            if progress_callback else None
+        ),
+    )
     target = pd.Timestamp(nse_date)
     updated = 0
     factor_count = 0
@@ -380,6 +392,8 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         x = x[~x.index.duplicated(keep="last")]
         data[symbol] = x
         updated += 1
+        if progress_callback and (updated == 1 or updated == total_symbols or updated % 100 == 0):
+            progress_callback(updated, total_symbols, f"Applying NSE EOD closes · {updated:,}/{total_symbols:,}")
 
     snapshot["data"] = data
     snapshot["nse_data_date"] = nse_date
