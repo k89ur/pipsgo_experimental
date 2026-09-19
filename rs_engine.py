@@ -272,6 +272,8 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Yahoo 10D recovery batches": 0,
         "Yahoo 10D recovery symbols requested": 0,
         "Yahoo 10D recovery symbols received": 0,
+        "Yahoo 10D recovery request time": 0.0,
+        "Yahoo 10D recovery reconstruction time": 0.0,
     })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
@@ -320,7 +322,19 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
             group = stale_symbols[start:start + recovery_batch_size]
             _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0)) + 1
             _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0)) + len(group)
+            recovery_request_started = time.perf_counter()
+            before_reconstruct = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
             recovered = _download_batch(group, retries=2, threads=True, period="10d")
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery request time"] = float(
+                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0)
+            ) + max(0.0, time.perf_counter() - recovery_request_started)
+            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery reconstruction time"] = float(
+                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0)
+            ) + max(
+                0.0,
+                float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
+                - before_reconstruct,
+            )
             _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0)) + len(recovered)
             for symbol, recent in recovered.items():
                 if _latest_date(recent) == target_date:
@@ -335,6 +349,8 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0))
     performance_timings["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0))
     performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
+    performance_timings["Yahoo 10D recovery request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0))
+    performance_timings["Yahoo 10D recovery reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0))
 
     usable = [
         symbol
