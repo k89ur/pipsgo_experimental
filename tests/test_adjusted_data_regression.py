@@ -185,8 +185,13 @@ def compare_fixture(symbol: str, old: pd.DataFrame, reconstructed: pd.DataFrame)
     ok = (
         len(common) == len(old) == len(reconstructed)
         and np.isfinite(max_abs)
-        and max_abs <= NUMERIC_ABS_TOL
-        and max_rel <= NUMERIC_REL_TOL
+        and np.allclose(
+            old_values,
+            new_values,
+            rtol=NUMERIC_REL_TOL,
+            atol=NUMERIC_ABS_TOL,
+            equal_nan=True,
+        )
     )
     return Comparison(
         symbol,
