@@ -1,4 +1,4 @@
-import time
+import time as perf_time
 import streamlit as st
 import pandas as pd
 from datetime import datetime, time
@@ -308,7 +308,7 @@ if scan_live or scan_eod:
     )
     progress_slot.progress(0, text=f"{scan_name} · Starting…")
     try:
-        scan_wall_started = time.perf_counter()
+        scan_wall_started = perf_time.perf_counter()
 
         def stock_update(done, total, label):
             text = str(label)
@@ -353,7 +353,7 @@ if scan_live or scan_eod:
         )
         progress_slot.progress(99, text=f"{scan_name} · Preparing final results…")
         performance_timings = dict(stats.get("performance_timings", {}))
-        fno_started = time.perf_counter()
+        fno_started = perf_time.perf_counter()
         try:
             fno_df = filter_fno_results(scan_df)
             fno_symbols = set(fno_df["Symbol"].astype(str).str.strip().str.upper()) if fno_df is not None and not fno_df.empty else set()
@@ -364,8 +364,8 @@ if scan_live or scan_eod:
             df = scan_df.copy()
             st.session_state.fno_result = pd.DataFrame()
             st.session_state.fno_error = "F&O list is currently unavailable. Main Results are unaffected."
-        performance_timings["F&O partition + result preparation"] = time.perf_counter() - fno_started
-        performance_timings["Stock RS scan wall time"] = time.perf_counter() - scan_wall_started
+        performance_timings["F&O partition + result preparation"] = perf_time.perf_counter() - fno_started
+        performance_timings["Stock RS scan wall time"] = perf_time.perf_counter() - scan_wall_started
         stats["performance_timings"] = performance_timings
         st.session_state.stock_result = df
         st.session_state.stock_stats = stats
