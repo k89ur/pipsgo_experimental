@@ -403,10 +403,6 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
     performance["Apply NSE closes"] = time.perf_counter() - apply_started
-    performance["Yahoo 10D reference"] = 0.0
-    performance["Yahoo 10D reference batches"] = 0
-    performance["Yahoo 10D symbols requested"] = 0
-    performance["Yahoo 10D symbols received"] = 0
     diagnostics_started = time.perf_counter()
     _refresh_snapshot_diagnostics(snapshot)
     performance["Snapshot diagnostics refresh"] = time.perf_counter() - diagnostics_started
@@ -419,20 +415,6 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     return snapshot
 
 
-@st.cache_data(show_spinner=False, persist="disk", max_entries=200)
-def _cached_engine_batch(
-    symbols_tuple: tuple[str, ...],
-    period: str,
-    threads: bool,
-    cache_day: str,
-    _download_fn,
-) -> dict[str, pd.DataFrame]:
-    result = _download_fn(list(symbols_tuple), retries=3, threads=threads, period=period)
-    if len(result) < len(symbols_tuple):
-        raise RuntimeError("Incomplete batch; do not cache partial market data")
-    return result
-
-
 def install_nse_latest_close(engine_module) -> None:
     if getattr(engine_module, "_nse_latest_close_installed", False):
         return
@@ -441,9 +423,8 @@ def install_nse_latest_close(engine_module) -> None:
     original_clear_cache = engine_module.clear_stock_data_cache
 
     def wrapped_download_universe(*args, **kwargs):
-        # Batch caching is owned by snapshot_cache. Keeping a single cache layer
-        # ensures both 2Y snapshots and 10D stale recovery use the same persistent
-        # cache instead of one cache wrapper bypassing another.
+        # Batch caching is owned by snapshot_cache so the production engine
+        # has a single persistent Yahoo data cache layer.
         snapshot = original_download_universe(*args, **kwargs)
         return patch_snapshot(snapshot, kwargs.get("progress_callback"))
 
