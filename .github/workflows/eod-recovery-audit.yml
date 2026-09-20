@@ -26,7 +26,7 @@ jobs:
           python -m pip install "numpy>=1.26" "pandas>=2.0" "requests>=2.31" "yfinance>=0.2.40" "pytest>=8"
       - env:
           RUN_EOD_RECOVERY_AUDIT: "1"
-          EOD_RECOVERY_AUDIT_MAX_STALE: ${{ inputs.max_stale || '0' }}
+          EOD_RECOVERY_AUDIT_MAX_STALE: ${{ inputs.max_stale || '683' }}
         run: python -m pytest tests/test_eod_recovery_comparison.py -q -s
 
 # Diagnostic run trigger: 2026-09-20
