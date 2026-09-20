@@ -9,7 +9,7 @@ import nse_latest_data
 import rs_engine
 
 RUN = os.getenv("RUN_BZ_SOMANCERA_AUDIT") == "1"
-TARGET = "SOMANCERA"
+TARGET = "SOMANYCERA"
 
 
 @pytest.mark.skipif(
@@ -51,7 +51,7 @@ def test_bz_somancera_classification() -> None:
     latest = rows.sort_values("DATE1").iloc[-1] if not rows.empty else None
 
     print("\n" + "=" * 88)
-    print("SOMANCERA BZ CLASSIFICATION AUDIT #14.6")
+    print("SOMANYCERA BZ CLASSIFICATION AUDIT #14.6")
     print("=" * 88)
     print(f"NSE bhavcopy date        : {nse_date}")
     print(f"Scanner universe count   : {len(universe):,}")
@@ -90,6 +90,7 @@ def test_bz_somancera_classification() -> None:
 
     assert TARGET in universe_set
     assert not rows.empty
-    # #14.3's current-only result must not be explained by BZ removal
-    # if SOMANCERA is still a current-only match.
     assert TARGET not in bz_symbols
+    # The earlier #14.3 output named SOMANCERA, which is not the NSE symbol
+    # for Somany Ceramics.
+    assert "SOMANCERA" not in universe_set
