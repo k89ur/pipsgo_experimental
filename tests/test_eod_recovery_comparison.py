@@ -213,6 +213,48 @@ def test_eod_recovery_vs_nse_close_candidate() -> None:
     print(f"NSE latest date   : {nse_date}")
     print(f"NSE closes        : {len(nse_closes):,}")
 
+    # #12.15.4: measure stale depth using the observed trading-session
+    # calendar from the fresh 2Y universe, avoiding weekend/holiday assumptions.
+    observed_dates = sorted(
+        {
+            pd.Timestamp(d)
+            for frame in base.values()
+            for d in frame.index
+            if pd.notna(d)
+        }
+    )
+    target_ts = pd.Timestamp(target_date)
+    session_depth = {}
+    calendar_depth = {}
+    for symbol in stale:
+        latest = dates.get(symbol)
+        if not latest:
+            continue
+        latest_ts = pd.Timestamp(latest)
+        session_depth[symbol] = sum(
+            latest_ts < d <= target_ts for d in observed_dates
+        )
+        calendar_depth[symbol] = (target_ts - latest_ts).days
+
+    if session_depth:
+        depth = pd.Series(session_depth, dtype="int64")
+        cal = pd.Series(calendar_depth, dtype="int64")
+        print("\n" + "=" * 78)
+        print("STALE-DATE DEPTH AUDIT #12.15.4")
+        print("=" * 78)
+        print(f"Stale population analyzed : {len(depth):,}")
+        print(f"Max calendar-day lag       : {int(cal.max())}")
+        print(f"Max observed-session lag   : {int(depth.max())}")
+        for n in (0, 1, 2, 3, 4, 5):
+            count = int((depth == n).sum())
+            label = "0 sessions" if n == 0 else f"{n} session{'s' if n != 1 else ''}"
+            print(f"{label:<25}: {count:4d}")
+        print(f">=6 sessions              : {int((depth >= 6).sum()):4d}")
+        print(f"<=1 session               : {int((depth <= 1).sum()):4d}")
+        print(f"<=2 sessions              : {int((depth <= 2).sum()):4d}")
+        print(f">2 sessions               : {int((depth > 2).sum()):4d}")
+        print("=" * 78)
+
     # CURRENT: same recovery semantics as production. For real stale data,
     # use Yahoo 10D recovery. For a clean CI download, simulate a lagged
     # cached batch by withholding the final daily rows from the base history.
