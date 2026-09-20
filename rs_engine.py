@@ -346,12 +346,6 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     target_date = max(initial_dates) if initial_dates else None
     stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
 
-    # Diagnostic-only shadow baseline. Recovery replaces data[symbol] rather
-    # than mutating the original frame, so references remain valid.
-    global _RECOVERY_SHADOW_BASE, _RECOVERY_SHADOW_SYMBOLS
-    _RECOVERY_SHADOW_BASE = {symbol: data[symbol] for symbol in stale_symbols if symbol in data}
-    _RECOVERY_SHADOW_SYMBOLS = list(_RECOVERY_SHADOW_BASE)
-
     # Diagnostic-only: measure actual stale depth before recovery using the
     # trading-session dates present in the downloaded universe. This avoids
     # treating weekends/exchange holidays as missing sessions.
@@ -379,48 +373,9 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         _DOWNLOAD_DIAGNOSTICS["Stale depth 6+ sessions"] = depth_counts[6]
         _DOWNLOAD_DIAGNOSTICS["Stale depth max sessions"] = max_depth
 
-    recovery_started = time.perf_counter()
-    if stale_symbols:
-        total_stale = len(stale_symbols)
-        if progress_callback:
-            progress_callback(0, total_stale, f"Recovering {total_stale:,} stale symbols for {target_date}")
-        recovery_batch_size = 50
-        for start in range(0, total_stale, recovery_batch_size):
-            group = stale_symbols[start:start + recovery_batch_size]
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0)) + 1
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0)) + len(group)
-            recovery_request_started = time.perf_counter()
-            before_reconstruct = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
-            before_download_calls = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
-            recovered = _download_batch(group, retries=2, threads=True, period="10d")
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery request time"] = float(
-                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0)
-            ) + max(0.0, time.perf_counter() - recovery_request_started)
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery reconstruction time"] = float(
-                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0)
-            ) + max(
-                0.0,
-                float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
-                - before_reconstruct,
-            )
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0)) + len(recovered)
-            for symbol, recent in recovered.items():
-                if _latest_date(recent) == target_date:
-                    data[symbol] = _merge_history(data.get(symbol), recent)
-            done = min(start + len(group), total_stale)
-            if progress_callback:
-                progress_callback(done, total_stale, f"Stale-data recovery · {done:,}/{total_stale:,}")
-            # Throttle only when this recovery batch actually touched Yahoo.
-            # Persistent-cache hits need no network pacing and should not pay the
-            # fixed 250ms inter-batch delay.
-            after_download_calls = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
-            _DOWNLOAD_DIAGNOSTICS["Yahoo 10D recovery network calls"] = int(
-                _DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery network calls", 0)
-            ) + max(0, after_download_calls - before_download_calls)
-            if start + recovery_batch_size < total_stale and after_download_calls > before_download_calls:
-                time.sleep(0.25)
-    performance_timings["Stale-data recovery"] = time.perf_counter() - recovery_started
-    performance_timings["Stale symbols recovered"] = len(stale_symbols)
+    stale_detection_started = time.perf_counter()
+    performance_timings["Stale-data detection"] = time.perf_counter() - stale_detection_started
+    performance_timings["Stale symbols detected"] = len(stale_symbols)
     performance_timings["Stale depth 1 session"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 1 session", 0))
     performance_timings["Stale depth 2 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 2 sessions", 0))
     performance_timings["Stale depth 3 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 3 sessions", 0))
@@ -428,19 +383,7 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Stale depth 5 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 5 sessions", 0))
     performance_timings["Stale depth 6+ sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 6+ sessions", 0))
     performance_timings["Stale depth max sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth max sessions", 0))
-    performance_timings["Recovery shadow comparable"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow comparable", 0))
-    performance_timings["Recovery shadow Raw RS changed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow Raw RS changed", 0))
-    performance_timings["Recovery shadow max Raw RS diff"] = float(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow max Raw RS diff", 0.0))
-    performance_timings["Recovery shadow RS Rating changed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow RS Rating changed", 0))
-    performance_timings["Recovery shadow max RS Rating diff"] = float(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow max RS Rating diff", 0.0))
-    performance_timings["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0))
-    performance_timings["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0))
-    performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
-    performance_timings["Yahoo 10D recovery request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0))
-    performance_timings["Yahoo 10D recovery reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0))
-    # Refresh cache diagnostics after stale recovery. The recovery phase also
-    # calls _download_batch, so capturing these values before recovery would
-    # incorrectly report zero 10D misses/hits.
+    # Refresh cache diagnostics after the complete snapshot download.
     performance_timings["Yahoo cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache lookups", 0))
     performance_timings["Yahoo cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache hits", 0))
     performance_timings["Yahoo cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache misses", 0))
