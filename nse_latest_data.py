@@ -442,7 +442,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
             candidate_rating = {}
 
             for symbol, frame in data.items():
-                metrics = rs_engine._metrics(symbol, frame)
+                metrics = rs_engine._metrics(symbol, frame, rising_days=20, calculate_ma_rising=False, snapshot_mode="eod")
                 if metrics:
                     try:
                         current_scores[symbol] = _shadow_score(metrics)
@@ -452,7 +452,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
             for symbol, frame in data.items():
                 source = shadow_base.get(symbol, frame)
                 candidate_frame = _shadow_patch(source, symbol) if symbol in shadow_base else frame
-                metrics = rs_engine._metrics(symbol, candidate_frame)
+                metrics = rs_engine._metrics(symbol, candidate_frame, rising_days=20, calculate_ma_rising=False, snapshot_mode="eod")
                 if metrics:
                     try:
                         candidate_scores[symbol] = _shadow_score(metrics)
