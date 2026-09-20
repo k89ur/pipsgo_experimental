@@ -289,6 +289,11 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Stale depth 5 sessions": 0,
         "Stale depth 6+ sessions": 0,
         "Stale depth max sessions": 0,
+        "Recovery shadow comparable": 0,
+        "Recovery shadow Raw RS changed": 0,
+        "Recovery shadow max Raw RS diff": 0.0,
+        "Recovery shadow RS Rating changed": 0,
+        "Recovery shadow max RS Rating diff": 0.0,
     })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
@@ -340,6 +345,12 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     initial_dates = [date for date in initial_dates if date]
     target_date = max(initial_dates) if initial_dates else None
     stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
+
+    # Diagnostic-only shadow baseline. Recovery replaces data[symbol] rather
+    # than mutating the original frame, so references remain valid.
+    global _RECOVERY_SHADOW_BASE, _RECOVERY_SHADOW_SYMBOLS
+    _RECOVERY_SHADOW_BASE = {symbol: data[symbol] for symbol in stale_symbols if symbol in data}
+    _RECOVERY_SHADOW_SYMBOLS = list(_RECOVERY_SHADOW_BASE)
 
     # Diagnostic-only: measure actual stale depth before recovery using the
     # trading-session dates present in the downloaded universe. This avoids
@@ -417,6 +428,11 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Stale depth 5 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 5 sessions", 0))
     performance_timings["Stale depth 6+ sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 6+ sessions", 0))
     performance_timings["Stale depth max sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth max sessions", 0))
+    performance_timings["Recovery shadow comparable"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow comparable", 0))
+    performance_timings["Recovery shadow Raw RS changed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow Raw RS changed", 0))
+    performance_timings["Recovery shadow max Raw RS diff"] = float(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow max Raw RS diff", 0.0))
+    performance_timings["Recovery shadow RS Rating changed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow RS Rating changed", 0))
+    performance_timings["Recovery shadow max RS Rating diff"] = float(_DOWNLOAD_DIAGNOSTICS.get("Recovery shadow max RS Rating diff", 0.0))
     performance_timings["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0))
     performance_timings["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0))
     performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
