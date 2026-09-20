@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import io
 import os
 
 import pandas as pd
 import pytest
-import requests
 
 import rs_engine
 
@@ -18,57 +16,14 @@ RUN = os.getenv("RUN_BZ_UNIVERSE_AUDIT") == "1"
 
 
 def _fetch_latest_nse_bhavcopy() -> tuple[str, pd.DataFrame]:
-    today = pd.Timestamp.now(tz="Asia/Kolkata").date()
-    last_error = None
+    # Reuse the production NSE parser/source selection so this audit measures
+    # the same authoritative bhavcopy used by the scanner.
+    return rs_engine._fetch_nse_bhavcopy(
+        max_lookback_days=5,
+        require_today=False,
+        equity_only=False,
+    )
 
-    for offset in range(0, 6):
-        day = today - pd.Timedelta(days=offset)
-        date_str = day.strftime("%d%m%Y")
-
-        for template in NSE_BHAVCOPY_URLS:
-            try:
-                response = requests.get(
-                    template.format(date=date_str),
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Accept": "text/csv,*/*",
-                    },
-                    timeout=20,
-                )
-                response.raise_for_status()
-
-                if (
-                    not response.content
-                    or response.content.lstrip().startswith(b"<")
-                ):
-                    raise ValueError("NSE returned non-CSV content")
-
-                frame = pd.read_csv(io.BytesIO(response.content))
-                required = {"SYMBOL", "SERIES", "DATE1"}
-                missing = required - set(frame.columns)
-                if missing:
-                    raise ValueError(
-                        f"NSE bhavcopy missing columns: {sorted(missing)}"
-                    )
-
-                frame["SYMBOL"] = (
-                    frame["SYMBOL"].astype("string").str.strip().str.upper()
-                )
-                frame["SERIES"] = (
-                    frame["SERIES"].astype("string").str.strip().str.upper()
-                )
-                frame = frame.dropna(subset=["SYMBOL", "SERIES"])
-
-                actual = pd.to_datetime(frame["DATE1"], errors="coerce").dropna()
-                if actual.empty:
-                    raise ValueError("NSE bhavcopy has no valid DATE1")
-
-                return actual.iloc[0].date().isoformat(), frame
-
-            except Exception as exc:
-                last_error = exc
-
-    raise RuntimeError(f"Unable to retrieve recent NSE bhavcopy: {last_error}")
 
 
 @pytest.mark.skipif(
