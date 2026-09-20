@@ -380,6 +380,22 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
     performance_timings["Yahoo 10D recovery request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery request time", 0.0))
     performance_timings["Yahoo 10D recovery reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery reconstruction time", 0.0))
+    # Refresh cache diagnostics after stale recovery. The recovery phase also
+    # calls _download_batch, so capturing these values before recovery would
+    # incorrectly report zero 10D misses/hits.
+    performance_timings["Yahoo cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache lookups", 0))
+    performance_timings["Yahoo cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache hits", 0))
+    performance_timings["Yahoo cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo cache misses", 0))
+    performance_timings["Yahoo 2Y cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache lookups", 0))
+    performance_timings["Yahoo 2Y cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache hits", 0))
+    performance_timings["Yahoo 2Y cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache misses", 0))
+    performance_timings["Yahoo 10D cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache lookups", 0))
+    performance_timings["Yahoo 10D cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache hits", 0))
+    performance_timings["Yahoo 10D cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache misses", 0))
+    performance_timings["Yahoo download calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
+    performance_timings["Yahoo symbols processed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo symbols processed", 0))
+    performance_timings["Yahoo request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo request time", 0.0))
+    performance_timings["Adjusted reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
     performance_timings["Yahoo 10D recovery network calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery network calls", 0))
 
     usable = [
