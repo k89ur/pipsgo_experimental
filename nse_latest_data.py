@@ -473,6 +473,42 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
                 candidate_only = sorted(shadow_set & candidate_set - current_set)
                 both_missing = sorted(shadow_set - current_set - candidate_set)
                 non_comparable = sorted(set(current_only) | set(candidate_only) | set(both_missing))
+
+                def _shadow_reason(frame):
+                    if frame is None or frame.empty:
+                        return "empty frame"
+                    if "Close" not in frame.columns:
+                        return "missing Close"
+                    close = pd.to_numeric(frame["Close"], errors="coerce").dropna()
+                    if len(close) < 200:
+                        return f"Close history {len(close)} < 200"
+                    if "High" in frame.columns:
+                        high = pd.to_numeric(frame["High"], errors="coerce").dropna()
+                        if len(high) < 253:
+                            return f"High history {len(high)} < 253"
+                    for days, label in ((63, "3M"), (126, "6M"), (189, "9M"), (252, "12M")):
+                        if len(close) <= days:
+                            return f"{label} return unavailable: {len(close)} <= {days}"
+                    return "metrics unexpectedly unavailable"
+
+                def _shadow_detail(symbol):
+                    source = shadow_base.get(symbol)
+                    recovered = data.get(symbol)
+                    candidate = _shadow_patch(source, symbol) if source is not None else source
+                    source_close = len(pd.to_numeric(source["Close"], errors="coerce").dropna()) if source is not None and "Close" in source.columns else 0
+                    recovered_close = len(pd.to_numeric(recovered["Close"], errors="coerce").dropna()) if recovered is not None and "Close" in recovered.columns else 0
+                    candidate_close = len(pd.to_numeric(candidate["Close"], errors="coerce").dropna()) if candidate is not None and "Close" in candidate.columns else 0
+                    return (
+                        f"{symbol}: before={source_close}d/{_latest_date(source) or '—'}; "
+                        f"recovered={recovered_close}d/{_latest_date(recovered) or '—'} "
+                        f"reason={_shadow_reason(recovered)}; "
+                        f"candidate={candidate_close}d/{_latest_date(candidate) or '—'} "
+                        f"reason={_shadow_reason(candidate)}"
+                    )
+
+                performance["Recovery shadow non-comparable detail"] = " || ".join(
+                    _shadow_detail(symbol) for symbol in non_comparable
+                )
                 performance["Recovery shadow non-comparable current-only"] = len(current_only)
                 performance["Recovery shadow non-comparable candidate-only"] = len(candidate_only)
                 performance["Recovery shadow non-comparable both"] = len(both_missing)
