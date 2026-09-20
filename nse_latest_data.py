@@ -395,6 +395,94 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         if progress_callback and (updated == 1 or updated == total_symbols or updated % 100 == 0):
             progress_callback(updated, total_symbols, f"Applying NSE EOD closes · {updated:,}/{total_symbols:,}")
 
+    # Diagnostic-only shadow comparison: compare the actual recovered
+    # production snapshot with the exact same snapshot before 10D recovery,
+    # after applying the same authoritative NSE EOD close to both paths.
+    shadow_started = time.perf_counter()
+    try:
+        import rs_engine
+        shadow_base = getattr(rs_engine, "_RECOVERY_SHADOW_BASE", {})
+        if shadow_base:
+            def _shadow_patch(frame, symbol):
+                if frame is None or frame.empty:
+                    return frame
+                nse_close = closes.get(symbol)
+                if nse_close is None:
+                    return frame
+                factor = None
+                if "Adjustment Factor" in frame.columns:
+                    factors = pd.to_numeric(frame["Adjustment Factor"], errors="coerce")
+                    valid = factors.index[factors.notna() & (factors > 0) & (factors.index <= target)]
+                    if len(valid):
+                        factor = float(factors.loc[valid[-1]])
+                scaled = float(nse_close) * factor if factor is not None else float(nse_close)
+                x = frame.copy()
+                if target in x.index:
+                    x.loc[target, "Close"] = scaled
+                else:
+                    row = {column: float("nan") for column in x.columns}
+                    row["Close"] = scaled
+                    x = pd.concat([x, pd.DataFrame([row], index=[target])])
+                x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
+                x = x[~x.index.isna()].sort_index()
+                x = x[~x.index.duplicated(keep="last")]
+                return x
+
+            def _shadow_score(metrics):
+                return (
+                    float(metrics["3M %"]) * 0.40
+                    + float(metrics["6M %"]) * 0.20
+                    + float(metrics["9M %"]) * 0.20
+                    + float(metrics["12M %"]) * 0.20
+                )
+
+            current_scores = {}
+            candidate_scores = {}
+            current_rating = {}
+            candidate_rating = {}
+
+            for symbol, frame in data.items():
+                metrics = rs_engine._metrics(symbol, frame)
+                if metrics:
+                    try:
+                        current_scores[symbol] = _shadow_score(metrics)
+                    except (KeyError, TypeError, ValueError):
+                        pass
+
+            for symbol, frame in data.items():
+                source = shadow_base.get(symbol, frame)
+                candidate_frame = _shadow_patch(source, symbol) if symbol in shadow_base else frame
+                metrics = rs_engine._metrics(symbol, candidate_frame)
+                if metrics:
+                    try:
+                        candidate_scores[symbol] = _shadow_score(metrics)
+                    except (KeyError, TypeError, ValueError):
+                        pass
+
+            if current_scores and candidate_scores:
+                current_series = pd.Series(current_scores, dtype="float64")
+                candidate_series = pd.Series(candidate_scores, dtype="float64")
+                common = sorted(set(current_series.index) & set(candidate_series.index))
+                current_rating_series = rs_engine._percentile_rating(current_series)
+                candidate_rating_series = rs_engine._percentile_rating(candidate_series)
+                shadow_symbols = sorted(set(shadow_base) & set(common))
+                raw_diffs = [
+                    abs(float(current_series.loc[s]) - float(candidate_series.loc[s]))
+                    for s in shadow_symbols
+                ]
+                rating_diffs = [
+                    abs(float(current_rating_series.loc[s]) - float(candidate_rating_series.loc[s]))
+                    for s in shadow_symbols
+                ]
+                performance["Recovery shadow comparable"] = len(shadow_symbols)
+                performance["Recovery shadow Raw RS changed"] = sum(d > 1e-10 for d in raw_diffs)
+                performance["Recovery shadow max Raw RS diff"] = max(raw_diffs, default=0.0)
+                performance["Recovery shadow RS Rating changed"] = sum(d > 0 for d in rating_diffs)
+                performance["Recovery shadow max RS Rating diff"] = max(rating_diffs, default=0.0)
+    except Exception as exc:
+        performance["Recovery shadow error"] = str(exc)
+    performance["Recovery shadow comparison"] = time.perf_counter() - shadow_started
+
     snapshot["data"] = data
     snapshot["nse_data_date"] = nse_date
     snapshot["nse_source_mode"] = mode
