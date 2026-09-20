@@ -55,10 +55,10 @@ def test_bz_somancera_classification() -> None:
     print("=" * 88)
     print(f"NSE bhavcopy date        : {nse_date}")
     print(f"Scanner universe count   : {len(universe):,}")
-    print(f"SOMANCERA in universe    : {TARGET in universe_set}")
-    print(f"SOMANCERA row present    : {not rows.empty}")
+    print(f"SOMANYCERA in universe    : {TARGET in universe_set}")
+    print(f"SOMANYCERA row present    : {not rows.empty}")
     print(
-        f"SOMANCERA raw series     : "
+        f"SOMANYCERA raw series     : "
         f"{sorted(rows['SERIES'].dropna().unique().tolist()) if not rows.empty else []}"
     )
     print(f"Series-map classification: {series_map.get(TARGET, 'MISSING')}")
@@ -73,7 +73,7 @@ def test_bz_somancera_classification() -> None:
             f"prev_close={latest.get('PREV_CLOSE')}"
         )
 
-    print("\nAll SOMANCERA bhavcopy rows:")
+    print("\nAll SOMANYCERA bhavcopy rows:")
     if rows.empty:
         print("  NONE")
     else:
