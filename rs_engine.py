@@ -282,6 +282,13 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Yahoo 10D recovery symbols received": 0,
         "Yahoo 10D recovery request time": 0.0,
         "Yahoo 10D recovery reconstruction time": 0.0,
+        "Stale depth 1 session": 0,
+        "Stale depth 2 sessions": 0,
+        "Stale depth 3 sessions": 0,
+        "Stale depth 4 sessions": 0,
+        "Stale depth 5 sessions": 0,
+        "Stale depth 6+ sessions": 0,
+        "Stale depth max sessions": 0,
     })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
@@ -333,6 +340,34 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     initial_dates = [date for date in initial_dates if date]
     target_date = max(initial_dates) if initial_dates else None
     stale_symbols = [symbol for symbol, frame in data.items() if target_date and _latest_date(frame) < target_date]
+
+    # Diagnostic-only: measure actual stale depth before recovery using the
+    # trading-session dates present in the downloaded universe. This avoids
+    # treating weekends/exchange holidays as missing sessions.
+    if stale_symbols and target_date:
+        observed_dates = sorted({
+            pd.Timestamp(index_value)
+            for frame in data.values()
+            for index_value in frame.index
+            if pd.notna(index_value)
+        })
+        target_ts = pd.Timestamp(target_date)
+        depth_counts = {n: 0 for n in range(1, 7)}
+        max_depth = 0
+        for symbol in stale_symbols:
+            latest = _latest_date(data.get(symbol))
+            if not latest:
+                continue
+            latest_ts = pd.Timestamp(latest)
+            depth = sum(latest_ts < observed <= target_ts for observed in observed_dates)
+            max_depth = max(max_depth, depth)
+            depth_counts[min(depth, 6)] += 1
+        for n in range(1, 6):
+            key_name = "Stale depth 1 session" if n == 1 else f"Stale depth {n} sessions"
+            _DOWNLOAD_DIAGNOSTICS[key_name] = depth_counts[n]
+        _DOWNLOAD_DIAGNOSTICS["Stale depth 6+ sessions"] = depth_counts[6]
+        _DOWNLOAD_DIAGNOSTICS["Stale depth max sessions"] = max_depth
+
     recovery_started = time.perf_counter()
     if stale_symbols:
         total_stale = len(stale_symbols)
@@ -375,6 +410,13 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
                 time.sleep(0.25)
     performance_timings["Stale-data recovery"] = time.perf_counter() - recovery_started
     performance_timings["Stale symbols recovered"] = len(stale_symbols)
+    performance_timings["Stale depth 1 session"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 1 session", 0))
+    performance_timings["Stale depth 2 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 2 sessions", 0))
+    performance_timings["Stale depth 3 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 3 sessions", 0))
+    performance_timings["Stale depth 4 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 4 sessions", 0))
+    performance_timings["Stale depth 5 sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 5 sessions", 0))
+    performance_timings["Stale depth 6+ sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth 6+ sessions", 0))
+    performance_timings["Stale depth max sessions"] = int(_DOWNLOAD_DIAGNOSTICS.get("Stale depth max sessions", 0))
     performance_timings["Yahoo 10D recovery batches"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery batches", 0))
     performance_timings["Yahoo 10D recovery symbols requested"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols requested", 0))
     performance_timings["Yahoo 10D recovery symbols received"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery symbols received", 0))
