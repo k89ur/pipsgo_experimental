@@ -399,6 +399,10 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     # production snapshot with the exact same snapshot before 10D recovery,
     # after applying the same authoritative NSE EOD close to both paths.
     shadow_started = time.perf_counter()
+    performance["Recovery shadow non-comparable current-only"] = 0
+    performance["Recovery shadow non-comparable candidate-only"] = 0
+    performance["Recovery shadow non-comparable both"] = 0
+    performance["Recovery shadow non-comparable symbols"] = ""
     try:
         import rs_engine
         shadow_base = getattr(rs_engine, "_RECOVERY_SHADOW_BASE", {})
@@ -462,7 +466,18 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
             if current_scores and candidate_scores:
                 current_series = pd.Series(current_scores, dtype="float64")
                 candidate_series = pd.Series(candidate_scores, dtype="float64")
-                common = sorted(set(current_series.index) & set(candidate_series.index))
+                shadow_set = set(shadow_base)
+                current_set = set(current_series.index)
+                candidate_set = set(candidate_series.index)
+                current_only = sorted(shadow_set & current_set - candidate_set)
+                candidate_only = sorted(shadow_set & candidate_set - current_set)
+                both_missing = sorted(shadow_set - current_set - candidate_set)
+                non_comparable = sorted(set(current_only) | set(candidate_only) | set(both_missing))
+                performance["Recovery shadow non-comparable current-only"] = len(current_only)
+                performance["Recovery shadow non-comparable candidate-only"] = len(candidate_only)
+                performance["Recovery shadow non-comparable both"] = len(both_missing)
+                performance["Recovery shadow non-comparable symbols"] = ", ".join(non_comparable)
+                common = sorted(current_set & candidate_set)
                 current_rating_series = rs_engine._percentile_rating(current_series)
                 candidate_rating_series = rs_engine._percentile_rating(candidate_series)
                 shadow_symbols = sorted(set(shadow_base) & set(common))
