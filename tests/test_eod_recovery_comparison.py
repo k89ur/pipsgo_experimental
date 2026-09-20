@@ -260,8 +260,11 @@ def test_eod_recovery_vs_nse_close_candidate() -> None:
             missing_nse.append(symbol)
             continue
 
+        # CURRENT production path also receives the authoritative NSE EOD
+        # close after Yahoo 10D recovery. Apply that patch here before comparing.
+        current_with_nse = _patch_with_nse_close(cur, nse_date, nse_close)
         candidate = _patch_with_nse_close(old, nse_date, nse_close)
-        cur_metrics = _metrics(symbol, cur)
+        cur_metrics = _metrics(symbol, current_with_nse)
         candidate_metrics = _metrics(symbol, candidate)
 
         if not cur_metrics or not candidate_metrics:
@@ -274,10 +277,10 @@ def test_eod_recovery_vs_nse_close_candidate() -> None:
             {
                 "Symbol": symbol,
                 "Base Date": _latest(old),
-                "Current Date": _latest(cur),
+                "Current Date": _latest(current_with_nse),
                 "Candidate Date": _latest(candidate),
                 "Base Rows": len(old),
-                "Current Rows": len(cur),
+                "Current Rows": len(current_with_nse),
                 "Candidate Rows": len(candidate),
                 "Current RS": cur_rs,
                 "Candidate RS": candidate_rs,
