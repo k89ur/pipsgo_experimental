@@ -28,3 +28,5 @@ jobs:
           RUN_EOD_RECOVERY_AUDIT: "1"
           EOD_RECOVERY_AUDIT_MAX_STALE: ${{ inputs.max_stale || '0' }}
         run: python -m pytest tests/test_eod_recovery_comparison.py -q -s
+
+# Diagnostic run trigger: 2026-09-20
