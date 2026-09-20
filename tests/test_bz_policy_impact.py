@@ -179,6 +179,42 @@ def test_bz_policy_impact() -> None:
     print(f"Candidate-only symbols        : {candidate_only[:50]}")
     print(f"Current-only symbols          : {current_only[:50]}")
 
+    rating_changed_symbols = []
+    if common:
+        changed_mask = current_common["RS Rating"] != candidate_common["RS Rating"]
+        for symbol in current_common.index[changed_mask]:
+            rating_changed_symbols.append({
+                "Symbol": symbol,
+                "Current RS": int(current_common.loc[symbol, "RS Rating"]),
+                "Candidate RS": int(candidate_common.loc[symbol, "RS Rating"]),
+                "Raw RS": float(current_common.loc[symbol, "Raw RS Score"]),
+            })
+    rating_changed_symbols = sorted(
+        rating_changed_symbols,
+        key=lambda row: (abs(row["Current RS"] - row["Candidate RS"]), row["Symbol"]),
+        reverse=True,
+    )
+    print("\\nRS Rating changes caused by removing BZ:")
+    for row in rating_changed_symbols[:20]:
+        print(
+            f"  {row['Symbol']:<16} current={row['Current RS']:>2} "
+            f"candidate={row['Candidate RS']:>2} raw_rs={row['Raw RS']:.6f}"
+        )
+
+    print("\\nCurrent-only final-match detail:")
+    for symbol in current_only:
+        row = current.loc[symbol]
+        candidate_row = candidate.loc[symbol] if symbol in candidate.index else None
+        print(
+            f"  {symbol:<16} RS={int(row['RS Rating'])} "
+            f"raw_rs={row['Raw RS Score']:.6f} "
+            f"near_high={bool(row['Pass Near High'])} "
+            f"minervini={bool(row['Pass Minervini'])} "
+            f"min_price={bool(row['Pass Min Price'])}"
+        )
+        if candidate_row is None:
+            print("    Candidate universe: excluded (BZ)")
+
     fno = fno_stocks.load_fno_symbols()
     current_fno = current_final & fno
     candidate_fno = candidate_final & fno
