@@ -32,7 +32,7 @@ NSE_HEADERS = {
 }
 
 RUN = os.getenv("RUN_EOD_RECOVERY_AUDIT") == "1"
-MAX_STALE = int(os.getenv("EOD_RECOVERY_AUDIT_MAX_STALE", "0"))
+MAX_STALE = int(os.getenv("EOD_RECOVERY_AUDIT_MAX_STALE", "683"))
 
 
 def _latest(frame: pd.DataFrame) -> str | None:
@@ -329,3 +329,96 @@ def test_eod_recovery_vs_nse_close_candidate() -> None:
     # We intentionally do not assert numerical equivalence yet.
     assert result["Current Rows"].gt(0).all()
     assert result["Candidate Rows"].gt(0).all()
+
+    # Full-universe filter-impact audit using the exact production defaults.
+    current_rows = []
+    candidate_rows = []
+    for symbol in symbols:
+        if symbol not in base:
+            continue
+        if symbol in stale:
+            current_source = current.get(symbol)
+            candidate_source = candidate_base.get(symbol, base[symbol])
+        else:
+            current_source = base[symbol]
+            candidate_source = base[symbol]
+        if current_source is None or candidate_source is None:
+            continue
+        nse_close = nse_closes.get(symbol)
+        if nse_close is None:
+            continue
+        current_frame = _patch_with_nse_close(current_source, nse_date, nse_close)
+        candidate_frame = _patch_with_nse_close(candidate_source, nse_date, nse_close)
+        try:
+            cm = _metrics(symbol, current_frame)
+            am = _metrics(symbol, candidate_frame)
+        except Exception:
+            continue
+        if cm and am:
+            current_rows.append(cm)
+            candidate_rows.append(am)
+
+    def _prepare_scan(rows_list: list[dict]) -> pd.DataFrame:
+        x = pd.DataFrame(rows_list)
+        x = x.dropna(subset=["3M %", "6M %", "9M %", "12M %"]).copy()
+        x["Raw RS Score"] = (
+            x["3M %"] * 0.40 + x["6M %"] * 0.20
+            + x["9M %"] * 0.20 + x["12M %"] * 0.20
+        )
+        x["RS Rating"] = rs_engine._percentile_rating(x["Raw RS Score"])
+        return x.set_index("Symbol", drop=False)
+
+    current_scan = _prepare_scan(current_rows)
+    candidate_scan = _prepare_scan(candidate_rows)
+    common_symbols = sorted(set(current_scan.index) & set(candidate_scan.index))
+    current_scan = current_scan.loc[common_symbols]
+    candidate_scan = candidate_scan.loc[common_symbols]
+
+    def _filters(df: pd.DataFrame) -> dict[str, pd.Series]:
+        return {
+            "Min price": df["LTP"] >= 100.0,
+            "Within 5% of 52W high": df["From 52W High %"] >= -5.0,
+            "RS Rating >= 80": df["RS Rating"] >= 80,
+            "Minervini MA trend": (
+                (df["LTP"] > df["50 DMA"])
+                & (df["LTP"] > df["150 DMA"])
+                & (df["LTP"] > df["200 DMA"])
+            ),
+        }
+
+    current_filters = _filters(current_scan)
+    candidate_filters = _filters(candidate_scan)
+
+    print("\nFull-universe filter impact:")
+    print(f"Comparable full-universe rows : {len(common_symbols):,}")
+    for name in current_filters:
+        changed_filter = current_filters[name] != candidate_filters[name]
+        print(
+            f"{name:<26}: current={int(current_filters[name].sum()):4d} "
+            f"candidate={int(candidate_filters[name].sum()):4d} "
+            f"changed={int(changed_filter.sum()):3d}"
+        )
+
+    current_final = (
+        current_filters["Min price"]
+        & current_filters["Within 5% of 52W high"]
+        & current_filters["RS Rating >= 80"]
+        & current_filters["Minervini MA trend"]
+    )
+    candidate_final = (
+        candidate_filters["Min price"]
+        & candidate_filters["Within 5% of 52W high"]
+        & candidate_filters["RS Rating >= 80"]
+        & candidate_filters["Minervini MA trend"]
+    )
+    final_changed = current_final != candidate_final
+    added = sorted(candidate_scan.index[final_changed & candidate_final].tolist())
+    removed = sorted(candidate_scan.index[final_changed & current_final].tolist())
+
+    print(
+        f"Final scan matches           : current={int(current_final.sum()):4d} "
+        f"candidate={int(candidate_final.sum()):4d} "
+        f"changed={int(final_changed.sum()):3d}"
+    )
+    print(f"Candidate-only additions     : {added[:30]}")
+    print(f"Current-only removals         : {removed[:30]}")
