@@ -9,7 +9,10 @@ import pytest
 
 import rs_engine
 
-NSE_EQUITY_LIST_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+NSE_BHAVCOPY_URLS = [
+    "https://archives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
+    "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv",
+]
 
 
 RUN = os.getenv("RUN_BZ_UNIVERSE_AUDIT") == "1"
@@ -38,11 +41,11 @@ def _fetch_nse_equity_list() -> pd.DataFrame:
 )
 def test_bz_universe_membership_audit() -> None:
     universe = rs_engine.get_nse_symbols()
-    listing = _fetch_nse_equity_list()
+    nse_date, listing = _fetch_latest_nse_bhavcopy()
 
     universe_df = pd.DataFrame({"SYMBOL": universe})
     joined = universe_df.merge(
-        listing[["SYMBOL", "SERIES"]],
+        listing[["SYMBOL", "SERIES"]].drop_duplicates("SYMBOL", keep="last"),
         on="SYMBOL",
         how="left",
         validate="one_to_one",
@@ -58,7 +61,7 @@ def test_bz_universe_membership_audit() -> None:
     print("BZ UNIVERSE MEMBERSHIP AUDIT #14.2")
     print("=" * 78)
     print(f"Scanner universe                 : {len(universe):,}")
-    print(f"NSE equity-list rows             : {len(listing):,}")
+    print(f"NSE bhavcopy date                : {nse_date}")\n    print(f"NSE bhavcopy rows                : {len(listing):,}")
     print(f"Universe symbols with series     : {int((~missing_series).sum()):,}")
     print(f"Universe symbols missing series  : {int(missing_series.sum()):,}")
     print("\nSeries distribution inside scanner universe:")
