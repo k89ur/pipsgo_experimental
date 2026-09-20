@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import pytest
 
+import nse_latest_data
 import rs_engine
 
 NSE_BHAVCOPY_URLS = [
@@ -18,7 +19,7 @@ RUN = os.getenv("RUN_BZ_UNIVERSE_AUDIT") == "1"
 def _fetch_latest_nse_bhavcopy() -> tuple[str, pd.DataFrame]:
     # Reuse the production NSE parser/source selection so this audit measures
     # the same authoritative bhavcopy used by the scanner.
-    return rs_engine._fetch_nse_bhavcopy(
+    return nse_latest_data._fetch_nse_bhavcopy(
         max_lookback_days=5,
         require_today=False,
         equity_only=False,
