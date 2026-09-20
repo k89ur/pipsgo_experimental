@@ -94,10 +94,12 @@ def test_bz_policy_impact() -> None:
         .str.strip()
         .str.upper()
     )
+    all_symbols_set = set(all_symbols)
     bz_symbols = sorted(
         symbol for symbol in all_symbols
         if series_map.get(symbol) == "BZ"
     )
+    bz_set = set(bz_symbols)
     eq_be_symbols = [
         symbol for symbol in all_symbols
         if symbol not in set(bz_symbols)
@@ -120,7 +122,7 @@ def test_bz_policy_impact() -> None:
     candidate_common = candidate.loc[common]
 
     print("\n" + "=" * 82)
-    print("BZ POLICY IMPACT AUDIT #14.3")
+    print("BZ POLICY IMPACT AUDIT #14.7")
     print("=" * 82)
     print(f"NSE bhavcopy date             : {nse_date}")
     print(f"Current universe              : {len(all_symbols):,}")
@@ -129,6 +131,7 @@ def test_bz_policy_impact() -> None:
     print(f"Current metric rows           : {len(current):,}")
     print(f"Candidate metric rows         : {len(candidate):,}")
     print(f"Common metric rows            : {len(common):,}")
+    print(f"Universe symbol integrity     : {len(all_symbols_set):,} unique")
 
     raw_rs_changed = 0
     if common:
@@ -178,6 +181,19 @@ def test_bz_policy_impact() -> None:
     print(f"Current-only matches          : {len(current_only):,}")
     print(f"Candidate-only symbols        : {candidate_only[:50]}")
     print(f"Current-only symbols          : {current_only[:50]}")
+
+    invalid_current = sorted(set(current.index) - all_symbols_set)
+    invalid_candidate = sorted(set(candidate.index) - all_symbols_set)
+    invalid_bz = sorted(bz_set - all_symbols_set)
+    invalid_candidate_universe = sorted(set(eq_be_symbols) - all_symbols_set)
+    invalid_current_only = sorted(set(current_only) - all_symbols_set)
+    invalid_candidate_only = sorted(set(candidate_only) - all_symbols_set)
+    print(f"Invalid current symbols      : {invalid_current}")
+    print(f"Invalid candidate symbols    : {invalid_candidate}")
+    print(f"Invalid BZ symbols           : {invalid_bz}")
+    print(f"Invalid candidate-universe   : {invalid_candidate_universe}")
+    print(f"Invalid current-only         : {invalid_current_only}")
+    print(f"Invalid candidate-only       : {invalid_candidate_only}")
 
     rating_changed_symbols = []
     if common:
@@ -235,5 +251,18 @@ def test_bz_policy_impact() -> None:
     print("=" * 82)
 
     assert len(all_symbols) >= 1000
-    assert len(bz_symbols) >= 0
+    assert len(all_symbols_set) == len(all_symbols)
+    assert bz_set.issubset(all_symbols_set)
+    assert set(eq_be_symbols).issubset(all_symbols_set)
+    assert bz_set.isdisjoint(set(eq_be_symbols))
+    assert bz_set | set(eq_be_symbols) == all_symbols_set
+    assert set(current.index).issubset(all_symbols_set)
+    assert set(candidate.index).issubset(all_symbols_set)
+    assert set(current_final).issubset(all_symbols_set)
     assert set(candidate_final).issubset(set(eq_be_symbols))
+    assert not invalid_current
+    assert not invalid_candidate
+    assert not invalid_bz
+    assert not invalid_candidate_universe
+    assert not invalid_current_only
+    assert not invalid_candidate_only
