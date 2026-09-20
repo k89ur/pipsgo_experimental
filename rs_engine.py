@@ -182,18 +182,6 @@ def _download_batch(symbols: list[str], retries: int = 3, threads: bool = True, 
     return last_result
 
 
-def _download_missing(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    recovered: dict[str, pd.DataFrame] = {}
-    for start in range(0, len(symbols), 10):
-        group = symbols[start:start + 10]
-        recovered.update(_download_batch(group, retries=2, threads=False))
-        if start + 10 < len(symbols):
-            time.sleep(0.25)
-    remaining = [symbol for symbol in symbols if symbol not in recovered]
-    for symbol in remaining:
-        recovered.update(_download_batch([symbol], retries=2, threads=False))
-    return recovered
-
 
 def _latest_date(frame: pd.DataFrame) -> Optional[str]:
     if frame is None or frame.empty:
@@ -203,14 +191,6 @@ def _latest_date(frame: pd.DataFrame) -> Optional[str]:
     except Exception:
         return None
 
-
-def _merge_history(old: pd.DataFrame, recent: pd.DataFrame) -> pd.DataFrame:
-    """Merge a recent recovery window into the original long history."""
-    if recent is None or recent.empty:
-        return old
-    if old is None or old.empty:
-        return recent
-    return _clean_history(pd.concat([old, recent], axis=0))
 
 
 def _snapshot_date_diagnostics(data: dict[str, pd.DataFrame]) -> dict:
@@ -273,15 +253,6 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Yahoo 2Y cache lookups": 0,
         "Yahoo 2Y cache hits": 0,
         "Yahoo 2Y cache misses": 0,
-        "Yahoo 10D cache lookups": 0,
-        "Yahoo 10D cache hits": 0,
-        "Yahoo 10D cache misses": 0,
-        "Yahoo 10D recovery network calls": 0,
-        "Yahoo 10D recovery batches": 0,
-        "Yahoo 10D recovery symbols requested": 0,
-        "Yahoo 10D recovery symbols received": 0,
-        "Yahoo 10D recovery request time": 0.0,
-        "Yahoo 10D recovery reconstruction time": 0.0,
         "Stale depth 1 session": 0,
         "Stale depth 2 sessions": 0,
         "Stale depth 3 sessions": 0,
@@ -289,11 +260,6 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
         "Stale depth 5 sessions": 0,
         "Stale depth 6+ sessions": 0,
         "Stale depth max sessions": 0,
-        "Recovery shadow comparable": 0,
-        "Recovery shadow Raw RS changed": 0,
-        "Recovery shadow max Raw RS diff": 0.0,
-        "Recovery shadow RS Rating changed": 0,
-        "Recovery shadow max RS Rating diff": 0.0,
     })
     performance_timings: dict[str, float | int] = {}
     data: dict[str, pd.DataFrame] = {}
@@ -313,9 +279,6 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
             "seconds": round(batch_elapsed, 3),
             "received": len(batch_data),
         })
-        missing = [symbol for symbol in batch if symbol not in batch_data]
-        if missing:
-            batch_data.update(_download_missing(missing))
         unresolved = [symbol for symbol in batch if symbol not in batch_data]
         failed.extend(unresolved)
         data.update(batch_data)
@@ -338,9 +301,8 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo batch max seconds"] = max((x["seconds"] for x in batch_timings), default=0.0)
     performance_timings["Yahoo batch min seconds"] = min((x["seconds"] for x in batch_timings), default=0.0)
 
-    # Bulk 2-year downloads can be complete but one trading day behind.
-    # Recover the latest bars using a short recent window, then merge them into
-    # the original 2-year histories. This avoids thousands of individual calls.
+    # Bulk 2-year histories may have mixed latest dates. Keep the original
+    # histories intact; authoritative NSE EOD closes are applied by the wrapper.
     initial_dates = [_latest_date(frame) for frame in data.values()]
     initial_dates = [date for date in initial_dates if date]
     target_date = max(initial_dates) if initial_dates else None
@@ -390,14 +352,10 @@ def _download_universe(symbols: list[str], batch_size: int = DEFAULT_BATCH_SIZE,
     performance_timings["Yahoo 2Y cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache lookups", 0))
     performance_timings["Yahoo 2Y cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache hits", 0))
     performance_timings["Yahoo 2Y cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 2Y cache misses", 0))
-    performance_timings["Yahoo 10D cache lookups"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache lookups", 0))
-    performance_timings["Yahoo 10D cache hits"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache hits", 0))
-    performance_timings["Yahoo 10D cache misses"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D cache misses", 0))
     performance_timings["Yahoo download calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo download calls", 0))
     performance_timings["Yahoo symbols processed"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo symbols processed", 0))
     performance_timings["Yahoo request time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Yahoo request time", 0.0))
     performance_timings["Adjusted reconstruction time"] = float(_DOWNLOAD_DIAGNOSTICS.get("Adjusted reconstruction time", 0.0))
-    performance_timings["Yahoo 10D recovery network calls"] = int(_DOWNLOAD_DIAGNOSTICS.get("Yahoo 10D recovery network calls", 0))
 
     usable = [
         symbol
@@ -451,9 +409,6 @@ def clear_stock_data_cache() -> None:
         "Yahoo cache lookups": 0,
         "Yahoo cache hits": 0,
         "Yahoo cache misses": 0,
-        "Yahoo 10D recovery batches": 0,
-        "Yahoo 10D recovery symbols requested": 0,
-        "Yahoo 10D recovery symbols received": 0,
     })
 
 
