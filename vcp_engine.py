@@ -73,6 +73,8 @@ def analyze_vcp(
     prior_low_pct=70.0,
     dma_position_filter=True,
     dma_position_pct=15.0,
+    sma44_position_filter=True,
+    sma44_position_pct=30.0,
 ):
     x = _clean(frame)
     if len(x) < 253:
@@ -90,6 +92,8 @@ def analyze_vcp(
     from_high = (close / high52 - 1.0) * 100 if high52 > 0 else np.nan
     from_low = (close / low52 - 1.0) * 100 if low52 > 0 else np.nan
     dma_distance = (close / tv["50DMA"] - 1.0) * 100 if tv["50DMA"] > 0 else np.nan
+    sma44 = float(x.Close.rolling(44).mean().iloc[-1])
+    sma44_distance = (close / sma44 - 1.0) * 100 if sma44 > 0 else np.nan
 
     high_ok = (not use_52w_high) or (np.isfinite(from_high) and from_high >= -float(near_high_pct))
     low_ok = (not use_52w_low) or (np.isfinite(from_low) and from_low >= float(prior_low_pct))
@@ -97,10 +101,16 @@ def analyze_vcp(
     dma_ok = (not dma_position_filter) or (
         np.isfinite(dma_distance) and abs(dma_distance) <= float(dma_position_pct)
     )
+    sma44_ok = (not sma44_position_filter) or (
+        np.isfinite(sma44_distance)
+        and sma44_distance >= 0.0
+        and sma44_distance <= float(sma44_position_pct)
+    )
     qualified = bool(
         high_ok
         and low_ok
         and dma_ok
+        and sma44_ok
         and (trend_ok or not trend_filter)
     )
 
@@ -114,6 +124,8 @@ def analyze_vcp(
         "From 52W Low %": from_low,
         "50DMA": tv["50DMA"],
         "Price vs 50DMA %": dma_distance,
+        "44SMA": sma44,
+        "Price vs 44SMA %": sma44_distance,
         "150DMA": tv["150DMA"],
         "200DMA": tv["200DMA"],
         "50DMA Rising": tv["50DMA Rising"],
@@ -123,6 +135,7 @@ def analyze_vcp(
         "52W High OK": high_ok,
         "52W Low OK": low_ok,
         "50DMA Position OK": dma_ok,
+        "44SMA Position OK": sma44_ok,
         "History Days": len(x),
     }
 
@@ -135,6 +148,8 @@ def run_scan(
     prior_low_pct=70.0,
     dma_position_filter=True,
     dma_position_pct=15.0,
+    sma44_position_filter=True,
+    sma44_position_pct=30.0,
     batch_size=DEFAULT_BATCH_SIZE,
     snapshot_mode="eod",
     force_refresh=False,
@@ -189,7 +204,7 @@ def run_scan(
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
-        "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
+        "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
         "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView", "GoCharting",
     ]
