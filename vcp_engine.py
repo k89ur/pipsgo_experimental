@@ -118,7 +118,6 @@ def analyze_vcp(
         and low_ok
         and dma_ok
         and (trend_ok or not trend_filter)
-        and sma44_ok
     )
 
     return {
