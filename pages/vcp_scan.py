@@ -18,7 +18,7 @@ if "vcp_columns" not in st.session_state:
 
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
-    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
+    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "150DMA", "200DMA",
     "TradingView",
     "GoCharting",
 ]
@@ -38,6 +38,8 @@ def column_config():
         "From 52W Low %": st.column_config.NumberColumn("FROM 52W LOW", format="%.1f%%"),
         "50DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"),
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
+        "44SMA": st.column_config.NumberColumn("44 SMA", format="₹%.2f"),
+        "Price vs 44SMA %": st.column_config.NumberColumn("VS 44 SMA", format="%.1f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
         "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
@@ -185,7 +187,7 @@ def vcp_column_selector(all_columns, saved_columns):
 
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-head"><div class="page-title">VCP Type Scan</div><div class="page-sub">Trend · 52W position · 50DMA position</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="page-head"><div class="page-title">VCP Type Scan</div><div class="page-sub">Trend · 52W position · 50DMA position · 44SMA position</div></div>', unsafe_allow_html=True)
 
 if st.session_state.vcp_full_table:
     df = st.session_state.vcp_result
@@ -227,6 +229,12 @@ with main:
         with b:
             dma_position_filter = st.checkbox("50DMA position", True, key="vcp_dma_position")
             dma_position_pct = st.slider("Within 50DMA ± %", 0.0, 30.0, 15.0, step=1.0, key="vcp_dma_pct")
+
+        e44, f44 = st.columns(2, gap="small")
+        with e44:
+            sma44_position_filter = st.checkbox("44SMA position", True, key="vcp_sma44_position")
+            sma44_position_pct = st.slider("Above 44SMA ≤ %", 0.0, 30.0, 30.0, step=1.0, key="vcp_sma44_pct")
+            st.caption("Close must be at/above 44 SMA and no more than 30% above it.")
 
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         c, d = st.columns(2, gap="small")
@@ -273,6 +281,8 @@ if live or eod:
                 prior_low_pct=prior_low_pct,
                 dma_position_filter=dma_position_filter,
                 dma_position_pct=dma_position_pct,
+                sma44_position_filter=sma44_position_filter,
+                sma44_position_pct=sma44_position_pct,
                 batch_size=vcp_engine.DEFAULT_BATCH_SIZE,
                 snapshot_mode=mode,
                 progress_callback=update,
