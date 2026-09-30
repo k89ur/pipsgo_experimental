@@ -16,7 +16,8 @@ DEFAULT_BATCH_SIZE = rs_engine.DEFAULT_BATCH_SIZE
 # Simple VCP qualification model
 # ---------------------------------------------------------------------------
 # There is intentionally no swing/contraction, volume, breakout, quality,
-# stage, score, pivot, final-contraction, or 44 SMA condition logic in this version.
+# stage, score, pivot, or final-contraction logic in this version.
+# 44 SMA position is a real qualification condition.
 
 
 def _clean(frame: pd.DataFrame) -> pd.DataFrame:
@@ -177,6 +178,8 @@ def run_scan(
                 prior_low_pct=prior_low_pct,
                 dma_position_filter=dma_position_filter,
                 dma_position_pct=dma_position_pct,
+                sma44_position_filter=sma44_position_filter,
+                sma44_position_pct=sma44_position_pct,
             )
             if r:
                 rows.append(r)
@@ -206,7 +209,7 @@ def run_scan(
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
         "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
-        "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView", "GoCharting",
+        "52W High OK", "52W Low OK", "50DMA Position OK", "44SMA Position OK", "History Days", "TradingView", "GoCharting",
     ]
     df = df[[c for c in cols if c in df.columns]]
 
