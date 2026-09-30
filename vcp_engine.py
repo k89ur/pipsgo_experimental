@@ -16,7 +16,7 @@ DEFAULT_BATCH_SIZE = rs_engine.DEFAULT_BATCH_SIZE
 # Simple VCP qualification model
 # ---------------------------------------------------------------------------
 # There is intentionally no swing/contraction, volume, breakout, quality,
-# stage, score, pivot, or final-contraction logic in this version.
+# stage, score, pivot, final-contraction, or 44 SMA condition logic in this version.
 
 
 def _clean(frame: pd.DataFrame) -> pd.DataFrame:
@@ -78,23 +78,7 @@ def analyze_vcp(
     if len(x) < 253:
         return {}
 
-    current_open = float(x.Open.iloc[-1])
-    current_low = float(x.Low.iloc[-1])
     close = float(x.Close.iloc[-1])
-    sma44_series = x.Close.rolling(44).mean()
-    sma44 = float(sma44_series.iloc[-1]) if len(x) >= 44 else np.nan
-    if not np.isfinite(sma44) or sma44 <= 0:
-        return {}
-
-    close_vs_44 = (close / sma44 - 1.0) * 100.0
-    low_vs_44 = (current_low / sma44 - 1.0) * 100.0
-    sma44_ok = bool(
-        np.isfinite(close_vs_44)
-        and np.isfinite(low_vs_44)
-        and close_vs_44 > 0.0
-        and -0.25 <= low_vs_44 <= 1.0
-        and close > current_open
-    )
 
     range52 = x.iloc[-253:-1]
     high52 = float(range52.High.max())
@@ -128,14 +112,6 @@ def analyze_vcp(
         "From 52W High %": from_high,
         "52W Low": low52,
         "From 52W Low %": from_low,
-        "44SMA": sma44,
-        "Price vs 44SMA %": close_vs_44,
-        "Day Low vs 44SMA %": low_vs_44,
-        "Day Open": current_open,
-        "Day Low": current_low,
-        "Day Close": close,
-        "Close > Open": bool(close > current_open),
-        "44SMA Condition OK": sma44_ok,
         "50DMA": tv["50DMA"],
         "Price vs 50DMA %": dma_distance,
         "150DMA": tv["150DMA"],
@@ -213,7 +189,6 @@ def run_scan(
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
-        "44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "44SMA Condition OK",
         "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
         "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView", "GoCharting",
