@@ -258,8 +258,17 @@ with main:
                 "Low near 44SMA",
                 True,
                 key="vcp_low_44sma",
-                help="Today Low must be between -0.2% and +0.2% of the 44 SMA.",
+                help="Today Low must stay within the selected percentage range of the 44 SMA.",
             )
+            low_44sma_range = st.slider(
+                "44SMA Low range %",
+                -2.0,
+                2.0,
+                (-0.2, 0.2),
+                step=0.1,
+                key="vcp_low_44sma_range",
+            )
+            low_44sma_min_pct, low_44sma_max_pct = low_44sma_range
 
         with high_col:
             use_52w_high = st.checkbox("52W High", True, key="vcp_52w_high_enabled")
@@ -321,6 +330,8 @@ if live or eod:
                 sma44_position_filter=sma44_position_filter,
                 sma44_position_pct=sma44_position_pct,
                 low_44sma_filter=low_44sma_filter,
+                low_44sma_min_pct=low_44sma_min_pct,
+                low_44sma_max_pct=low_44sma_max_pct,
                 batch_size=vcp_engine.DEFAULT_BATCH_SIZE,
                 snapshot_mode=mode,
                 progress_callback=update,
