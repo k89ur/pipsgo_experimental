@@ -18,7 +18,7 @@ if "vcp_columns" not in st.session_state:
 
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
-    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
+    "52W Low", "From 52W Low %", "44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
     "TradingView",
     "GoCharting",
 ]
@@ -36,6 +36,9 @@ def column_config():
         "From 52W High %": st.column_config.NumberColumn("FROM 52W HIGH", format="%.1f%%"),
         "52W Low": st.column_config.NumberColumn("52W LOW", format="₹%.2f"),
         "From 52W Low %": st.column_config.NumberColumn("FROM 52W LOW", format="%.1f%%"),
+        "44SMA": st.column_config.NumberColumn("44 SMA", format="₹%.2f"),
+        "Price vs 44SMA %": st.column_config.NumberColumn("VS 44 SMA", format="%.2f%%"),
+        "Day Low vs 44SMA %": st.column_config.NumberColumn("DAY LOW VS 44 SMA", format="%.2f%%"),
         "50DMA": st.column_config.NumberColumn("50 DMA", format="₹%.2f"),
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
@@ -185,7 +188,7 @@ def vcp_column_selector(all_columns, saved_columns):
 
 
 st.markdown('<div class="page-brand"><span>PIPS</span>GOX</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-head"><div class="page-title">VCP Type Scan</div><div class="page-sub">Trend · 52W position · 50DMA position</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="page-head"><div class="page-title">VCP Type Scan</div><div class="page-sub">Trend · 52W position · 44SMA position · 50DMA position</div></div>', unsafe_allow_html=True)
 
 if st.session_state.vcp_full_table:
     df = st.session_state.vcp_result
@@ -237,6 +240,8 @@ with main:
             use_52w_low = st.checkbox("52W Low filter", False, key="vcp_52w_low_enabled")
             prior_low_pct = st.slider("Minimum advance from 52W Low %", 30.0, 300.0, 70.0, step=5.0, key="vcp_52w_low_pct")
 
+        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
+        st.caption("44 SMA condition · Always ON · Close > 44 SMA · Day Low within −0.25% to +1.00% of 44 SMA · Close > Open")
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         i, j, reset = st.columns([1.45, 1.45, 1.55], gap="small")
         with i:
