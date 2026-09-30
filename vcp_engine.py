@@ -214,6 +214,7 @@ def run_scan(
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
+        "44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "44SMA Condition OK",
         "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
         "52W High OK", "52W Low OK", "50DMA Position OK", "History Days", "TradingView", "GoCharting",
