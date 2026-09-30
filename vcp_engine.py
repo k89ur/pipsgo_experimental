@@ -45,6 +45,17 @@ def _trend_values(x: pd.DataFrame):
         return None
 
     current = float(close.iloc[-1])
+    recent_closes = close.iloc[-20:]
+    recent_mas = pd.DataFrame({
+        "Close": recent_closes,
+        "50DMA": m50.iloc[-20:],
+        "150DMA": m150.iloc[-20:],
+        "200DMA": m200.iloc[-20:],
+    })
+    price_above_all_mas_20d = bool(
+        recent_mas.notna().all(axis=1).all()
+        and (recent_mas["Close"] > recent_mas[["50DMA", "150DMA", "200DMA"]].max(axis=1)).all()
+    )
     vals = {
         "50DMA": float(m50.iloc[-1]),
         "150DMA": float(m150.iloc[-1]),
@@ -52,6 +63,7 @@ def _trend_values(x: pd.DataFrame):
         "50DMA Rising": bool(m50.iloc[-1] > m50.iloc[-21]),
         "150DMA Rising": bool(m150.iloc[-1] > m150.iloc[-21]),
         "200DMA Rising": bool(m200.iloc[-1] > m200.iloc[-21]),
+        "Price Above All MAs 20D": price_above_all_mas_20d,
     }
     vals["Trend OK"] = bool(
         current >= vals["50DMA"]
@@ -60,6 +72,7 @@ def _trend_values(x: pd.DataFrame):
         and vals["50DMA Rising"]
         and vals["150DMA Rising"]
         and vals["200DMA Rising"]
+        and vals["Price Above All MAs 20D"]
     )
     return vals
 
@@ -145,6 +158,7 @@ def analyze_vcp(
         "50DMA Rising": tv["50DMA Rising"],
         "150DMA Rising": tv["150DMA Rising"],
         "200DMA Rising": tv["200DMA Rising"],
+        "Price Above All MAs 20D": tv["Price Above All MAs 20D"],
         "Trend OK": trend_ok,
         "52W High OK": high_ok,
         "52W Low OK": low_ok,
@@ -224,7 +238,7 @@ def run_scan(
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
         "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
-        "50DMA Rising", "150DMA Rising", "200DMA Rising", "Trend OK",
+        "50DMA Rising", "150DMA Rising", "200DMA Rising", "Price Above All MAs 20D", "Trend OK",
         "52W High OK", "52W Low OK", "50DMA Position OK", "44SMA Position OK", "Today Low vs 44SMA OK", "History Days", "TradingView", "GoCharting",
     ]
     df = df[[c for c in cols if c in df.columns]]
