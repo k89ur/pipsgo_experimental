@@ -18,7 +18,7 @@ if "vcp_columns" not in st.session_state:
 
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
-    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "150DMA", "200DMA",
+    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
     "TradingView",
     "GoCharting",
 ]
@@ -40,6 +40,8 @@ def column_config():
         "Price vs 50DMA %": st.column_config.NumberColumn("VS 50 DMA", format="%.1f%%"),
         "44SMA": st.column_config.NumberColumn("44 SMA", format="₹%.2f"),
         "Price vs 44SMA %": st.column_config.NumberColumn("VS 44 SMA", format="%.1f%%"),
+        "Today Low": st.column_config.NumberColumn("TODAY LOW", format="₹%.2f"),
+        "Today Low vs 44SMA %": st.column_config.NumberColumn("LOW VS 44 SMA", format="%.2f%%"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
         "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
@@ -224,7 +226,7 @@ with main:
         st.markdown('<div class="section-title" style="margin-top:.05rem">VCP settings</div>', unsafe_allow_html=True)
 
         # Compact single-row VCP controls. UI-only change; scan logic is unchanged.
-        trend_col, dma_col, sma44_col, high_col, low_col = st.columns(5, gap="small")
+        trend_col, dma_col, sma44_col, low44_col, high_col, low_col = st.columns(6, gap="small")
 
         with trend_col:
             trend_filter = st.checkbox("Trend", True, key="vcp_trend")
@@ -249,6 +251,14 @@ with main:
                 30.0,
                 step=1.0,
                 key="vcp_sma44_pct",
+            )
+
+        with low44_col:
+            low_44sma_filter = st.checkbox(
+                "Low near 44SMA",
+                True,
+                key="vcp_low_44sma",
+                help="Today Low must be between -0.2% and +0.2% of the 44 SMA.",
             )
 
         with high_col:
@@ -310,6 +320,7 @@ if live or eod:
                 dma_position_pct=dma_position_pct,
                 sma44_position_filter=sma44_position_filter,
                 sma44_position_pct=sma44_position_pct,
+                low_44sma_filter=low_44sma_filter,
                 batch_size=vcp_engine.DEFAULT_BATCH_SIZE,
                 snapshot_mode=mode,
                 progress_callback=update,
