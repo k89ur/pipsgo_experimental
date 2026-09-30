@@ -151,6 +151,10 @@ def visible_vcp_columns():
                     valid.insert(valid.index("TradingView") + 1, "GoCharting")
                 else:
                     valid.append("GoCharting")
+            # Migration: expose the new 44 SMA diagnostics in existing saved layouts.
+            for new_col in ["44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "44SMA Condition OK"]:
+                if new_col in COLUMNS and new_col not in valid:
+                    valid.append(new_col)
             return valid
         return COLUMNS.copy()
     return COLUMNS.copy()
