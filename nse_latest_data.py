@@ -136,9 +136,40 @@ def _fetch_latest_nse_close_cached(
     return actual_date, dict(zip(df["SYMBOL"], df["CLOSE_PRICE"].astype(float)))
 
 
+@st.cache_data(show_spinner=False, persist="disk", max_entries=20)
+def _fetch_latest_nse_ohlc_cached(
+    max_lookback_days: int,
+    require_today: bool,
+    cache_day: str,
+) -> tuple[str, dict[str, dict[str, float]]]:
+    actual_date, df = _fetch_nse_bhavcopy(
+        max_lookback_days=max_lookback_days,
+        require_today=require_today,
+        equity_only=True,
+    )
+    fields = ["OPEN_PRICE", "HIGH_PRICE", "LOW_PRICE", "CLOSE_PRICE", "TTL_TRD_QTY"]
+    available = [field for field in fields if field in df.columns]
+    records = {}
+    for _, row in df.iterrows():
+        symbol = str(row["SYMBOL"]).strip().upper()
+        values = {}
+        for field in available:
+            value = pd.to_numeric(row[field], errors="coerce")
+            if pd.notna(value):
+                values[field] = float(value)
+        if symbol:
+            records[symbol] = values
+    return actual_date, records
+
+
 def fetch_latest_nse_close(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, float]]:
     cache_day = datetime.now(IST).date().isoformat()
     return _fetch_latest_nse_close_cached(max_lookback_days, require_today, cache_day)
+
+
+def fetch_latest_nse_ohlc(max_lookback_days: int = 5, require_today: bool = False) -> tuple[str, dict[str, dict[str, float]]]:
+    cache_day = datetime.now(IST).date().isoformat()
+    return _fetch_latest_nse_ohlc_cached(max_lookback_days, require_today, cache_day)
 
 
 def _download_raw_recent(symbols: list[str], progress_callback=None) -> dict[str, pd.DataFrame]:
@@ -356,9 +387,9 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         progress_callback(0, 1, "NSE bhavcopy · fetching latest EOD file from NSE")
     nse_started = time.perf_counter()
     if mode == "today":
-        nse_date, closes = fetch_latest_nse_close(require_today=True)
+        nse_date, nse_ohlc = fetch_latest_nse_ohlc(require_today=True)
     else:
-        nse_date, closes = fetch_latest_nse_close(max_lookback_days=10, require_today=False)
+        nse_date, nse_ohlc = fetch_latest_nse_ohlc(max_lookback_days=10, require_today=False)
     performance["NSE bhavcopy"] = time.perf_counter() - nse_started
     if progress_callback:
         progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(closes):,} closing prices · {nse_date}")
@@ -369,8 +400,8 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     updated = 0
     factor_count = 0
     for symbol, frame in data.items():
-        nse_close = closes.get(symbol)
-        if nse_close is None or frame is None or frame.empty:
+        nse_row = nse_ohlc.get(symbol)
+        if not nse_row or frame is None or frame.empty:
             continue
         adjusted_factor = None
         if "Adjustment Factor" in frame.columns:
@@ -379,14 +410,34 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
             if len(valid_dates):
                 adjusted_factor = float(factors.loc[valid_dates[-1]])
                 factor_count += 1
-        scaled_close = float(nse_close) * adjusted_factor if adjusted_factor is not None else float(nse_close)
+
         x = frame.copy()
         if target in x.index:
-            x.loc[target, "Close"] = scaled_close
+            row_index = target
         else:
+            row_index = target
             row = {column: float("nan") for column in x.columns}
-            row["Close"] = scaled_close
             x = pd.concat([x, pd.DataFrame([row], index=[target])])
+
+        # NSE is authoritative for the current EOD OHLC. Apply the same
+        # historical adjustment factor used by the Yahoo adjusted series so
+        # Open/High/Low/Close stay on the same adjusted price scale.
+        field_map = {
+            "OPEN_PRICE": "Open",
+            "HIGH_PRICE": "High",
+            "LOW_PRICE": "Low",
+            "CLOSE_PRICE": "Close",
+        }
+        for source_field, target_field in field_map.items():
+            value = nse_row.get(source_field)
+            if value is None:
+                continue
+            scaled_value = float(value) * adjusted_factor if adjusted_factor is not None else float(value)
+            if target_field in x.columns:
+                x.loc[row_index, target_field] = scaled_value
+
+        if "TTL_TRD_QTY" in nse_row and "Volume" in x.columns:
+            x.loc[row_index, "Volume"] = float(nse_row["TTL_TRD_QTY"])
         x.index = pd.to_datetime(x.index, errors="coerce").tz_localize(None)
         x = x[~x.index.isna()].sort_index()
         x = x[~x.index.duplicated(keep="last")]
