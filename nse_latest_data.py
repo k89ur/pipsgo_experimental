@@ -376,7 +376,9 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     mode_started = time.perf_counter()
     mode = _eod_source_mode()
     performance["EOD source-mode check"] = time.perf_counter() - mode_started
-    if snapshot.get("nse_source_mode") == mode and snapshot.get("nse_data_date"):
+    if (snapshot.get("nse_source_mode") == mode
+            and snapshot.get("nse_data_date")
+            and snapshot.get("nse_ohlc_version") == "1"):
         performance["EOD patch total"] = time.perf_counter() - patch_started
         performance["NSE close patch"] = performance["EOD patch total"]
         if progress_callback:
@@ -392,7 +394,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
         nse_date, nse_ohlc = fetch_latest_nse_ohlc(max_lookback_days=10, require_today=False)
     performance["NSE bhavcopy"] = time.perf_counter() - nse_started
     if progress_callback:
-        progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(closes):,} closing prices · {nse_date}")
+        progress_callback(1, 1, f"NSE bhavcopy · downloaded {len(nse_ohlc):,} OHLC rows · {nse_date}")
 
     total_symbols = len(data)
     target = pd.Timestamp(nse_date)
@@ -450,6 +452,7 @@ def patch_snapshot(snapshot: dict, progress_callback=None) -> dict:
     snapshot["data"] = data
     snapshot["nse_data_date"] = nse_date
     snapshot["nse_source_mode"] = mode
+    snapshot["nse_ohlc_version"] = "1"
     snapshot["nse_close_symbols"] = updated
     snapshot["nse_adjustment_factors"] = factor_count
     snapshot["nse_source"] = "NSE official CM bhavcopy"
