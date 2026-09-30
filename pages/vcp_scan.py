@@ -228,16 +228,6 @@ with main:
 
         with trend_col:
             trend_filter = st.checkbox("Trend", True, key="vcp_trend")
-            st.slider(
-                "Trend lookback",
-                20,
-                20,
-                20,
-                step=1,
-                disabled=True,
-                label_visibility="collapsed",
-                key="vcp_trend_lookback",
-            )
 
         with dma_col:
             dma_position_filter = st.checkbox("50DMA", True, key="vcp_dma_position")
