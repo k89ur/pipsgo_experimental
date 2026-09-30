@@ -315,7 +315,7 @@ with main:
             selected_columns = visible_vcp_columns()
             spacer, tool1, tool2, tool3 = st.columns([18, 0.45, 0.45, 0.45], gap="small")
             with tool1:
-                if st.button("", icon=":material/view_column:", type="tertiary", width=30, key="vcp_columns", help="Select columns"):
+                if st.button("", icon=":material/view_column:", type="tertiary", width=30, key="vcp_columns_button", help="Select columns"):
                     vcp_column_selector(COLUMNS, selected_columns)
             with tool2:
                 csv_data = df[[c for c in selected_columns if c in df.columns]].to_csv(index=False).encode("utf-8")
