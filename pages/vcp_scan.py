@@ -18,7 +18,7 @@ if "vcp_columns" not in st.session_state:
 
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
-    "52W Low", "From 52W Low %", "44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
+    "52W Low", "From 52W Low %", "44SMA", "Price vs 44SMA %", "Day Low vs 44SMA %", "44SMA Condition OK", "50DMA", "Price vs 50DMA %", "150DMA", "200DMA",
     "TradingView",
     "GoCharting",
 ]
@@ -142,8 +142,8 @@ def vcp_result_filter_controls(data):
 
 def visible_vcp_columns():
     saved = st.session_state.get("vcp_columns")
-    if saved:
-        valid = [col for col in saved if col in COLUMNS]
+    if saved and isinstance(saved, (list, tuple)):
+        valid = [col for col in saved if isinstance(col, str) and col in COLUMNS]
         if valid:
             # Migration: GoCharting was added after older saved column selections.
             if "GoCharting" in COLUMNS and "GoCharting" not in valid:
