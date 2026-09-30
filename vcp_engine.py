@@ -180,6 +180,8 @@ def run_scan(
     sma44_position_filter=True,
     sma44_position_pct=30.0,
     low_44sma_filter=True,
+    low_44sma_min_pct=-0.2,
+    low_44sma_max_pct=0.2,
     batch_size=DEFAULT_BATCH_SIZE,
     snapshot_mode="eod",
     force_refresh=False,
@@ -210,6 +212,8 @@ def run_scan(
                 sma44_position_filter=sma44_position_filter,
                 sma44_position_pct=sma44_position_pct,
                 low_44sma_filter=low_44sma_filter,
+                low_44sma_min_pct=low_44sma_min_pct,
+                low_44sma_max_pct=low_44sma_max_pct,
             )
             if r:
                 rows.append(r)
