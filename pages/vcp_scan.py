@@ -222,30 +222,67 @@ with side:
 with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">VCP settings</div>', unsafe_allow_html=True)
-        a, b = st.columns(2, gap="small")
-        with a:
-            trend_filter = st.checkbox("Trend filter", True, key="vcp_trend")
-            st.caption("Price ≥ 50 / 150 / 200 DMA + all three MAs rising over the last 20 trading days.")
-        with b:
-            dma_position_filter = st.checkbox("50DMA position", True, key="vcp_dma_position")
-            dma_position_pct = st.slider("Within 50DMA ± %", 0.0, 30.0, 15.0, step=1.0, key="vcp_dma_pct")
 
-        e44, f44 = st.columns(2, gap="small")
-        with e44:
-            sma44_position_filter = st.checkbox("44SMA position", True, key="vcp_sma44_position")
-            sma44_position_pct = st.slider("Above 44SMA ≤ %", 0.0, 30.0, 30.0, step=1.0, key="vcp_sma44_pct")
-            st.caption("Close must be at/above 44 SMA and no more than 30% above it.")
+        # Compact single-row VCP controls. UI-only change; scan logic is unchanged.
+        trend_col, dma_col, sma44_col, high_col, low_col = st.columns(5, gap="small")
 
-        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
-        c, d = st.columns(2, gap="small")
-        with c:
-            use_52w_high = st.checkbox("52W High filter", True, key="vcp_52w_high_enabled")
-            near_high = st.slider("Within 52W High %", 0.0, 10.0, 5.0, step=0.5, key="vcp_near_high")
-        with d:
-            use_52w_low = st.checkbox("52W Low filter", False, key="vcp_52w_low_enabled")
-            prior_low_pct = st.slider("Minimum advance from 52W Low %", 30.0, 300.0, 70.0, step=5.0, key="vcp_52w_low_pct")
+        with trend_col:
+            trend_filter = st.checkbox("Trend", True, key="vcp_trend")
+            st.slider(
+                "Trend lookback",
+                20,
+                20,
+                20,
+                step=1,
+                disabled=True,
+                label_visibility="collapsed",
+                key="vcp_trend_lookback",
+            )
 
-        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
+        with dma_col:
+            dma_position_filter = st.checkbox("50DMA", True, key="vcp_dma_position")
+            dma_position_pct = st.slider(
+                "50DMA ± %",
+                0.0,
+                30.0,
+                15.0,
+                step=1.0,
+                key="vcp_dma_pct",
+            )
+
+        with sma44_col:
+            sma44_position_filter = st.checkbox("44SMA", True, key="vcp_sma44_position")
+            sma44_position_pct = st.slider(
+                "44SMA above ≤ %",
+                0.0,
+                30.0,
+                30.0,
+                step=1.0,
+                key="vcp_sma44_pct",
+            )
+
+        with high_col:
+            use_52w_high = st.checkbox("52W High", True, key="vcp_52w_high_enabled")
+            near_high = st.slider(
+                "High within %",
+                0.0,
+                10.0,
+                5.0,
+                step=0.5,
+                key="vcp_near_high",
+            )
+
+        with low_col:
+            use_52w_low = st.checkbox("52W Low", False, key="vcp_52w_low_enabled")
+            prior_low_pct = st.slider(
+                "Min advance %",
+                30.0,
+                300.0,
+                70.0,
+                step=5.0,
+                key="vcp_52w_low_pct",
+            )
+
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         i, j, reset = st.columns([1.45, 1.45, 1.55], gap="small")
         with i:
