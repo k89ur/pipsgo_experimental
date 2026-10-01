@@ -41,6 +41,25 @@ def _make_session() -> requests.Session:
     return session
 
 
+def _standard_market_session_open(now: datetime | None = None) -> bool:
+    """
+    Conservative fallback when NSE /api/marketStatus rejects the cloud request.
+
+    NSE's normal equity schedule is:
+      - pre-open starts at 09:00 IST
+      - normal market closes at 15:30 IST
+
+    We intentionally treat a weekday inside that window as OPEN when the
+    authoritative market-status endpoint is unavailable. This prevents an
+    API outage from accidentally allowing an EOD scan during market hours.
+    """
+    now = now or datetime.now(IST)
+    if now.weekday() >= 5:
+        return False
+    current = (now.hour, now.minute)
+    return (9, 0) <= current < EQUITY_CLOSE_TIME
+
+
 def _read_bhavcopy(content: bytes) -> pd.DataFrame:
     df = pd.read_csv(io.BytesIO(content))
     df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
@@ -62,14 +81,37 @@ def _fetch_nse_market_status() -> dict:
 
 
 def eod_scan_market_open() -> bool:
-    state = _fetch_nse_market_status()
-    status = str(state.get("marketStatus", "")).strip().lower()
-    return status in NSE_OPEN_STATUSES
+    try:
+        state = _fetch_nse_market_status()
+        status = str(state.get("marketStatus", "")).strip().lower()
+        return status in NSE_OPEN_STATUSES
+    except Exception:
+        # NSE can reject /api/marketStatus from shared/cloud IPs with HTTP 403.
+        # Never interpret that failure as "market closed"; use the conservative
+        # standard-session clock instead so EOD scanning remains blocked during
+        # the normal/pre-open window.
+        return _standard_market_session_open()
 
 
 def _eod_source_mode() -> str:
     now = datetime.now(IST)
-    state = _fetch_nse_market_status()
+    try:
+        state = _fetch_nse_market_status()
+    except Exception as exc:
+        if _standard_market_session_open(now):
+            raise RuntimeError(
+                "NSE market-status API is unavailable, and standard NSE hours "
+                "indicate the Capital Market session is running. EOD scan blocked for safety."
+            ) from exc
+
+        if (now.hour, now.minute) < EQUITY_OPEN_TIME:
+            return "previous"
+
+        # After the normal close, continue only with the day's official NSE
+        # bhavcopy. If it is not available yet, the scan fails rather than
+        # silently using a stale previous-day snapshot.
+        return "today"
+
     status = str(state.get("marketStatus", "")).strip().lower()
     if status in NSE_OPEN_STATUSES:
         raise RuntimeError("EOD Scan is unavailable while the NSE Capital Market session is running.")
