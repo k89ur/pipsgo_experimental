@@ -538,7 +538,7 @@ def _stock_index_results(symbols: list[str]) -> dict[str, tuple[str, str, str, s
     return {symbol: metadata.get(symbol, missing) for symbol in symbols}
 
 
-def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, bypass_memory_cache: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
+def run_scan(min_rs: int = 80, max_rs: int = 100, near_high_pct: float = 5, min_price: float = 100, rising_days: int = 20, use_min_rs: bool = True, use_near_high: bool = True, use_min_price: bool = True, use_ma_rising: bool = False, use_minervini: bool = True, batch_size: int = DEFAULT_BATCH_SIZE, snapshot_mode: str = "eod", force_refresh: bool = False, bypass_memory_cache: bool = False, progress_callback: Optional[Callable[[int, int, str], None]] = None):
     scan_started = time.perf_counter()
     timings = {}
     universe_started = time.perf_counter()
@@ -588,7 +588,7 @@ def run_scan(min_rs: int = 80, near_high_pct: float = 5, min_price: float = 100,
     if use_near_high:
         df = df[df["From 52W High %"] >= -near_high_pct].copy()
     if use_min_rs:
-        df = df[df["RS Rating"] >= min_rs].copy()
+        df = df[(df["RS Rating"] >= min_rs) & (df["RS Rating"] <= max_rs)].copy()
     if use_minervini:
         df = df[(df["LTP"] > df["50 DMA"]) & (df["LTP"] > df["150 DMA"]) & (df["LTP"] > df["200 DMA"])].copy()
     if use_ma_rising:
