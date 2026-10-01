@@ -261,7 +261,16 @@ with main:
         s1, s2, s3, s4 = st.columns([1.45, 1.45, 1.25, 1.35], gap="small")
         with s1:
             use_min_rs = st.checkbox("Minimum RS", value=True, key="stock_use_min_rs")
-            min_rs = st.slider("RS threshold", 50, 99, 80, key="stock_min_rs", disabled=not use_min_rs)
+            rs_range = st.slider(
+                "RS range",
+                0,
+                100,
+                (80, 100),
+                step=1,
+                key="stock_rs_range",
+                disabled=not use_min_rs,
+            )
+            min_rs, max_rs = rs_range
         with s2:
             use_near_high = st.checkbox("Near 52W high", value=True, key="stock_use_near_high")
             near_high = st.slider("Maximum distance (%)", 1, 25, 5, key="stock_near_high", disabled=not use_near_high)
@@ -342,7 +351,7 @@ if scan_live or scan_eod:
             )
             progress_slot.progress(pct, text=f"{scan_name} · {text}")
         with st.spinner("Running stock scan…"):
-            scan_df, stats = run_scan(min_rs=min_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
+            scan_df, stats = run_scan(min_rs=min_rs, max_rs=max_rs, near_high_pct=near_high, min_price=min_price, use_minervini=use_minervini, use_ma_rising=use_ma_rising, rising_days=rising_days, batch_size=DEFAULT_BATCH_SIZE, snapshot_mode=mode, progress_callback=stock_update, use_min_rs=use_min_rs, use_near_high=use_near_high, use_min_price=use_min_price)
         total_matches = len(scan_df)
         stage_slot.markdown(
             f"<div style='font-size:.72rem;font-weight:700;margin-top:.45rem;'>Stage {stage_total} of {stage_total}</div>"
@@ -421,6 +430,7 @@ with main:
                     try:
                         _, cache_test_stats = run_scan(
                             min_rs=min_rs,
+                            max_rs=max_rs,
                             near_high_pct=near_high,
                             min_price=min_price,
                             use_minervini=use_minervini,
