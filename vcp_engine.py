@@ -92,6 +92,8 @@ def analyze_vcp(
     low_44sma_filter=True,
     low_44sma_min_pct=-0.2,
     low_44sma_max_pct=0.2,
+    bullish_candle_filter=True,
+    close_above_44_50_sma_filter=True,
 ):
     x = _clean(frame)
     if len(x) < 253:
@@ -112,7 +114,10 @@ def analyze_vcp(
     sma44 = float(x.Close.rolling(44).mean().iloc[-1])
     sma44_distance = (close / sma44 - 1.0) * 100 if sma44 > 0 else np.nan
     today_low = float(x.Low.iloc[-1])
+    today_open = float(x.Open.iloc[-1])
     today_low_vs_44sma = (today_low / sma44 - 1.0) * 100 if sma44 > 0 else np.nan
+    bullish_candle_ok = close > today_open
+    close_above_44_50_sma_ok = close > sma44 and close > tv["50DMA"]
 
     high_ok = (not use_52w_high) or (np.isfinite(from_high) and from_high >= -float(near_high_pct))
     low_ok = (not use_52w_low) or (np.isfinite(from_low) and from_low >= float(prior_low_pct))
@@ -130,12 +135,16 @@ def analyze_vcp(
         and today_low_vs_44sma >= float(low_44sma_min_pct)
         and today_low_vs_44sma <= float(low_44sma_max_pct)
     )
+    bullish_candle_pass = (not bullish_candle_filter) or bullish_candle_ok
+    close_above_44_50_sma_pass = (not close_above_44_50_sma_filter) or close_above_44_50_sma_ok
     qualified = bool(
         high_ok
         and low_ok
         and dma_ok
         and sma44_ok
         and low_44sma_ok
+        and bullish_candle_pass
+        and close_above_44_50_sma_pass
         and (trend_ok or not trend_filter)
     )
 
@@ -153,6 +162,9 @@ def analyze_vcp(
         "Price vs 44SMA %": sma44_distance,
         "Today Low": today_low,
         "Today Low vs 44SMA %": today_low_vs_44sma,
+        "Today Open": today_open,
+        "Bullish Candle OK": bullish_candle_ok,
+        "Close Above 44&50 SMA OK": close_above_44_50_sma_ok,
         "150DMA": tv["150DMA"],
         "200DMA": tv["200DMA"],
         "50DMA Rising": tv["50DMA Rising"],
@@ -165,6 +177,8 @@ def analyze_vcp(
         "50DMA Position OK": dma_ok,
         "44SMA Position OK": sma44_ok,
         "Today Low vs 44SMA OK": low_44sma_ok,
+        "Bullish Candle Filter OK": bullish_candle_pass,
+        "Close Above 44&50 SMA Filter OK": close_above_44_50_sma_pass,
         "History Days": len(x),
     }
 
@@ -182,6 +196,8 @@ def run_scan(
     low_44sma_filter=True,
     low_44sma_min_pct=-0.2,
     low_44sma_max_pct=0.2,
+    bullish_candle_filter=True,
+    close_above_44_50_sma_filter=True,
     batch_size=DEFAULT_BATCH_SIZE,
     snapshot_mode="eod",
     force_refresh=False,
@@ -214,6 +230,8 @@ def run_scan(
                 low_44sma_filter=low_44sma_filter,
                 low_44sma_min_pct=low_44sma_min_pct,
                 low_44sma_max_pct=low_44sma_max_pct,
+                bullish_candle_filter=bullish_candle_filter,
+                close_above_44_50_sma_filter=close_above_44_50_sma_filter,
             )
             if r:
                 rows.append(r)
@@ -241,9 +259,11 @@ def run_scan(
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
-        "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
+        "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Open", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Price Above All MAs 20D", "Trend OK",
-        "52W High OK", "52W Low OK", "50DMA Position OK", "44SMA Position OK", "Today Low vs 44SMA OK", "History Days", "TradingView", "GoCharting",
+        "52W High OK", "52W Low OK", "50DMA Position OK", "44SMA Position OK", "Today Low vs 44SMA OK",
+        "Bullish Candle OK", "Close Above 44&50 SMA OK", "Bullish Candle Filter OK", "Close Above 44&50 SMA Filter OK",
+        "History Days", "TradingView", "GoCharting",
     ]
     df = df[[c for c in cols if c in df.columns]]
 

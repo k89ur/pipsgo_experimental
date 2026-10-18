@@ -18,7 +18,8 @@ if "vcp_columns" not in st.session_state:
 
 COLUMNS = [
     "Symbol", "Index", "Industry", "LTP", "52W High", "From 52W High %",
-    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
+    "52W Low", "From 52W Low %", "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %",
+    "Today Open", "Bullish Candle OK", "Close Above 44&50 SMA OK", "150DMA", "200DMA",
     "TradingView",
     "GoCharting",
 ]
@@ -42,6 +43,7 @@ def column_config():
         "Price vs 44SMA %": st.column_config.NumberColumn("VS 44 SMA", format="%.1f%%"),
         "Today Low": st.column_config.NumberColumn("TODAY LOW", format="₹%.2f"),
         "Today Low vs 44SMA %": st.column_config.NumberColumn("LOW VS 44 SMA", format="%.2f%%"),
+        "Today Open": st.column_config.NumberColumn("TODAY OPEN", format="₹%.2f"),
         "150DMA": st.column_config.NumberColumn("150 DMA", format="₹%.2f"),
         "200DMA": st.column_config.NumberColumn("200 DMA", format="₹%.2f"),
         "TradingView": st.column_config.LinkColumn("TV", display_text="Open ↗", width="small"),
@@ -225,7 +227,7 @@ with main:
     with st.container(border=True):
         st.markdown('<div class="section-title" style="margin-top:.05rem">VCP settings</div>', unsafe_allow_html=True)
 
-        # Compact single-row VCP controls. UI-only change; scan logic is unchanged.
+        # Compact primary VCP controls; optional candle/MA confirmation filters are below.
         trend_col, dma_col, sma44_col, low44_col, high_col, low_col = st.columns(6, gap="small")
 
         with trend_col:
@@ -293,6 +295,19 @@ with main:
             )
 
         st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
+        candle_col, close_ma_col = st.columns(2, gap="small")
+        with candle_col:
+            bullish_candle_filter = st.checkbox(
+                "Close > Open", True, key="vcp_bullish_candle",
+                help="Require today's close to be strictly greater than today's open."
+            )
+        with close_ma_col:
+            close_above_44_50_sma_filter = st.checkbox(
+                "Close > 44 & 50 SMA", True, key="vcp_close_above_44_50_sma",
+                help="Require today's close to be strictly above both the 44 SMA and 50 DMA."
+            )
+
+        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         i, j, reset = st.columns([1.45, 1.45, 1.55], gap="small")
         with i:
             live = st.button("▶ Live Market Scan", type="primary", use_container_width=True, key="vcp_live")
@@ -332,6 +347,8 @@ if live or eod:
                 low_44sma_filter=low_44sma_filter,
                 low_44sma_min_pct=low_44sma_min_pct,
                 low_44sma_max_pct=low_44sma_max_pct,
+                bullish_candle_filter=bullish_candle_filter,
+                close_above_44_50_sma_filter=close_above_44_50_sma_filter,
                 batch_size=vcp_engine.DEFAULT_BATCH_SIZE,
                 snapshot_mode=mode,
                 progress_callback=update,
