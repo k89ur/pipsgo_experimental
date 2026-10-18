@@ -259,7 +259,7 @@ def run_scan(
     cols = [
         "Symbol", "Index", "Industry", "LTP",
         "52W High", "From 52W High %", "52W Low", "From 52W Low %",
-        "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
+        "50DMA", "Price vs 50DMA %", "44SMA", "Price vs 44SMA %", "Today Open", "Today Low", "Today Low vs 44SMA %", "150DMA", "200DMA",
         "50DMA Rising", "150DMA Rising", "200DMA Rising", "Price Above All MAs 20D", "Trend OK",
         "52W High OK", "52W Low OK", "50DMA Position OK", "44SMA Position OK", "Today Low vs 44SMA OK",
         "Bullish Candle OK", "Close Above 44&50 SMA OK", "Bullish Candle Filter OK", "Close Above 44&50 SMA Filter OK",
