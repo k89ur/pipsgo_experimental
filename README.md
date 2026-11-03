@@ -37,3 +37,15 @@ To enable delivery, add the repository Actions secrets `TELEGRAM_BOT_TOKEN` and 
 ## Important
 
 This is an IBD-style approximation based on the supplied Pine formula. It is not IBD's proprietary RS Rating.
+
+## Daily Stock RS CSV to Telegram
+
+A GitHub Actions workflow runs only the **Stock RS** after-market scan at **21:00 India time** (`15:30 UTC`). It uses the page's default filters (RS 80–100, within 5% of the 52-week high, minimum price ₹100, Minervini MA trend on, MA rising off), sends the main Stock RS results as a CSV, and excludes the separately displayed F&O rows. Saturdays and Sundays are skipped. On weekdays, it scans only when NSE's Capital Market status reports today's date as the latest trade date; if NSE cannot confirm the date, the job fails without scanning.
+
+To enable delivery after pushing this repository to GitHub:
+
+1. Create a Telegram bot with [@BotFather](https://t.me/BotFather), then start a chat with the bot (or add it to the destination group).
+2. In the repository's **Settings → Secrets and variables → Actions**, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as repository secrets.
+3. Ensure Actions are enabled. The `Daily Stock RS Telegram CSV` workflow can be run manually with **Run workflow** to verify setup.
+
+The scheduled run requires the repository to be hosted on GitHub and the workflow to exist on its default branch. GitHub Actions schedules can start a little later than the configured minute during high load. NSE status, market data, and Telegram must be reachable for a successful run. A manual workflow run on a non-trading day also skips based on NSE's current trade date.
