@@ -28,6 +28,12 @@ Open forwarded port **8501**.
 
 The first page load automatically runs the scan. **Refresh RS** forces a fresh NSE download.
 
+## Daily Stock RS Telegram CSV
+
+The `Daily Stock RS Telegram` GitHub Actions workflow runs the Stock RS EOD scan at 21:00 IST every day. It skips weekends and dates listed as NSE Capital Market trading holidays. It sends the main Stock RS results CSV (not the separate F&O results) to Telegram.
+
+To enable delivery, add the repository Actions secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. The bot must be able to message the target chat. The workflow can also be started manually from the Actions tab.
+
 ## Important
 
 This is an IBD-style approximation based on the supplied Pine formula. It is not IBD's proprietary RS Rating.
