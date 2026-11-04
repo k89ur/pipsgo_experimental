@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
+
+
+class _HeadlessStreamlitCacheFilter(logging.Filter):
+    """Hide Streamlit's expected no-runtime cache fallback in Actions logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == "streamlit.runtime.caching.cache_data_api"
+            and "No runtime found, using MemoryCacheStorageManager" in record.getMessage()
+        )
+
+
+logging.getLogger("streamlit.runtime.caching.cache_data_api").addFilter(_HeadlessStreamlitCacheFilter())
 
 IST = ZoneInfo("Asia/Kolkata")
 NSE_HOME = "https://www.nseindia.com/"
@@ -110,16 +124,45 @@ def run_stock_rs_scan() -> tuple[pd.DataFrame, dict]:
     return stock_data, stats
 
 
-def send_telegram_document(token: str, chat_id: str, content: bytes, caption: str) -> None:
-    response = requests.post(
-        f"https://api.telegram.org/bot{token}/sendDocument",
-        data={"chat_id": chat_id, "caption": caption},
-        files={"document": ("nse_stock_rs_scan.csv", content, "text/csv")},
-        timeout=60,
+def _telegram_result(token: str, method: str, **kwargs):
+    response = requests.request(
+        kwargs.pop("http_method", "GET"),
+        f"https://api.telegram.org/bot{token}/{method}",
+        timeout=90,
+        **kwargs,
     )
     response.raise_for_status()
-    if not response.json().get("ok"):
-        raise RuntimeError("Telegram did not accept the Stock RS CSV")
+    payload = response.json()
+    if not payload.get("ok"):
+        raise RuntimeError(f"Telegram {method} failed: {payload.get('description', 'unknown error')}")
+    return payload["result"]
+
+
+def telegram_destination(token: str, chat_id: str) -> dict:
+    chat = _telegram_result(token, "getChat", params={"chat_id": chat_id})
+    name = chat.get("title") or chat.get("username") or chat.get("first_name") or "unnamed chat"
+    resolved_id = str(chat.get("id", ""))
+    masked_id = f"…{resolved_id[-4:]}" if resolved_id else "unavailable"
+    print(f"Telegram destination verified: {name} (type={chat.get('type', 'unknown')}, id={masked_id})")
+    return chat
+
+
+def send_telegram_document(token: str, chat_id: str, content: bytes, caption: str) -> None:
+    result = _telegram_result(
+        token,
+        "sendDocument",
+        http_method="POST",
+        data={"chat_id": chat_id, "caption": caption},
+        files={"document": ("nse_stock_rs_scan.csv", content, "text/csv")},
+    )
+    document = result.get("document", {})
+    if document.get("file_name") != "nse_stock_rs_scan.csv":
+        raise RuntimeError("Telegram accepted a message without the expected Stock RS CSV document")
+    print(
+        "Telegram confirmed CSV delivery: "
+        f"chat_id=…{str(result.get('chat', {}).get('id', ''))[-4:]}, "
+        f"message_id={result.get('message_id')}, file={document['file_name']}"
+    )
 
 
 def main() -> int:
@@ -128,10 +171,11 @@ def main() -> int:
         print(f"Skipping Stock RS scan: {now.date()} is not an NSE trading day.")
         return 0
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id:
         raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be configured")
+    telegram_destination(token, chat_id)
 
     results, stats = run_stock_rs_scan()
     caption = f"NSE Stock RS Scan - {stats.get('data_date', now.date().isoformat())} - {len(results)} stocks"
